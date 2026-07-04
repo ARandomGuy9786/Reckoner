@@ -1,0 +1,98 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/reckoner/reckoner/config/reckoner.schema.json",
+  "title": "Reckoner configuration",
+  "description": "User preferences and gate conditions for Reckoner. See docs/config-schema.md.",
+  "type": "object",
+  "required": ["version", "categories"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": { "type": "string" },
+    "version": {
+      "type": "integer",
+      "const": 1,
+      "description": "Config schema version."
+    },
+    "profile": {
+      "type": "string",
+      "enum": ["learner", "builder", "expert", "custom"],
+      "default": "builder",
+      "description": "Preset that seeds category defaults. Explicit fields override it."
+    },
+    "learningMode": {
+      "type": "boolean",
+      "default": true,
+      "description": "Global predict-then-reveal switch. Categories may override via 'inherit'."
+    },
+    "competence": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean", "default": true },
+        "ledgerPath": {
+          "type": "string",
+          "default": ".reckoner/competence.json",
+          "description": "Local path to the competence ledger. Never leaves the machine."
+        },
+        "skipBelowFrontier": {
+          "type": "boolean",
+          "default": true,
+          "description": "Skip a gate when the concept is confidently below the user's frontier."
+        },
+        "decayHalfLifeDays": {
+          "type": ["number", "null"],
+          "default": 90,
+          "description": "Confidence decay half-life in days. null = never decays."
+        }
+      }
+    },
+    "categories": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Per-category gate behavior.",
+      "properties": {
+        "blastRadius": { "$ref": "#/$defs/category" },
+        "security": { "$ref": "#/$defs/category" },
+        "cost": { "$ref": "#/$defs/category" },
+        "novelty": { "$ref": "#/$defs/category" },
+        "architecture": { "$ref": "#/$defs/category" }
+      }
+    },
+    "gate": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "maxPromptsPerAction": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 1,
+          "description": "Cap on predict prompts raised by a single action."
+        }
+      }
+    }
+  },
+  "$defs": {
+    "category": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": ["off", "observe", "coach", "gate"],
+          "description": "off=never fires; observe=silent log; coach=teach then allow; gate=block until understood."
+        },
+        "depth": {
+          "type": "string",
+          "enum": ["concept", "consequence", "wiring"],
+          "description": "How much the reveal shows."
+        },
+        "learningMode": {
+          "type": "string",
+          "enum": ["on", "off", "inherit"],
+          "default": "inherit",
+          "description": "Predict-then-reveal for this category. inherit = use global learningMode."
+        }
+      }
+    }
+  }
+}

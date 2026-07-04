@@ -1,0 +1,58 @@
+{
+  // Reckoner configuration — the contract between you and the gate.
+  // This file is the product's soul: it decides WHEN a gate fires, HOW HARD it gates,
+  // HOW DEEP it explains, and WHETHER it teaches. Full field docs:
+  //   ../docs/config-schema.md
+  //
+  // Everything is silent by default. A gate only fires where you've asked it to AND
+  // where the competence model says it's above your current frontier.
+
+  "$schema": "./reckoner.schema.json",
+  "version": 1,
+
+  // Starting point for the matrix below. One of: "learner" | "builder" | "expert".
+  // A preset just seeds the `categories` defaults; anything you set explicitly wins.
+  "profile": "builder",
+
+  // Global predict-then-reveal switch. Per-category `learningMode` can override via
+  // "inherit". When false, gates plain-explain instead of asking you to predict first.
+  "learningMode": true,
+
+  "competence": {
+    "enabled": true,
+    // Local ledger of concepts seen + predictions right/wrong. Never leaves your machine.
+    "ledgerPath": ".reckoner/competence.json",
+    // If true, a gate is skipped when the model is confident the concept is below your
+    // frontier — this is the main defense against patronizing experienced users.
+    "skipBelowFrontier": true,
+    // How quickly confidence in a "known" concept decays (days). null = never decays.
+    "decayHalfLifeDays": 90
+  },
+
+  // The matrix. Each category resolves to a behavior:
+  //   mode:         "off" | "observe" | "coach" | "gate"
+  //   depth:        "concept" | "consequence" | "wiring"
+  //   learningMode: "on" | "off" | "inherit"   (inherit = use the global switch)
+  "categories": {
+    // Reversibility / scope of damage: deletes, migrations, force-push, infra teardown.
+    "blastRadius": { "mode": "gate", "depth": "consequence", "learningMode": "inherit" },
+
+    // Auth, secrets, permissions, network exposure.
+    "security": { "mode": "gate", "depth": "wiring", "learningMode": "inherit" },
+
+    // Paid APIs, provisioning, anything that spends money.
+    "cost": { "mode": "coach", "depth": "consequence", "learningMode": "inherit" },
+
+    // Concepts / protocols / tools new to YOU. Driven by the competence model, not a
+    // fixed list — this is where most of the "learning" happens.
+    "novelty": { "mode": "coach", "depth": "wiring", "learningMode": "inherit" },
+
+    // Cross-cutting changes; anything that alters how things are wired together.
+    "architecture": { "mode": "coach", "depth": "wiring", "learningMode": "inherit" }
+  },
+
+  "gate": {
+    // Cap on how many predict prompts a single action can raise, to bound friction.
+    "maxPromptsPerAction": 1
+  }
+}
