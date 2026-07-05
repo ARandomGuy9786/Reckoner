@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Concept discussion
+    url: https://github.com/ARandomGuy9786/Reckoner/discussions
+    about: For open-ended debate about the design, the thesis, or the open questions in docs/concept.md.
