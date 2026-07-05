@@ -85,11 +85,35 @@ default** and fires only where it earns its keep, driven by two things:
 Three presets ship out of the box — `learner`, `builder`, `expert` — and you can go
 fully custom.
 
+## Quickstart
+
+A runnable prototype of the gate loop (`detect → predict → reveal → branch`) lives in
+[`src/`](src/). It's a TypeScript CLI you can point at a proposed action to *feel* the
+predict-then-reveal friction firsthand.
+
+```bash
+npm install
+export ANTHROPIC_API_KEY=sk-ant-...      # or run `ant auth login`
+npm run demo                             # runs a built-in sample action
+npm run demo -- "delete the staging database and recreate it"   # or your own
+```
+
+Reckoner's own engine calls Claude ([`claude-opus-4-8`](src/engine.ts)) to detect
+triggers, produce the reveal, and grade your prediction. Behavior is driven entirely by
+[`config/reckoner.jsonc`](config/reckoner.jsonc); your competence ledger is written
+locally to `.reckoner/` and never leaves your machine. `npm run typecheck` checks the
+whole thing.
+
+This CLI is the wedge: it validates the riskiest assumption — *is the friction
+tolerable, and does predict-then-reveal actually improve comprehension?* — before wiring
+Reckoner into a Claude Code [`PreToolUse` hook](integrations/claude-code/).
+
 ## Project status
 
-Early scaffold. This commit establishes the **spine** (config schema + module
-skeleton) and the **soul** (this README). See [`docs/concept.md`](docs/concept.md) for
-the full design, including how each known failure mode maps to a design commitment.
+Early. The **spine** (config schema + module skeleton), the **soul** (this README), and
+a **runnable gate-loop prototype** (above) are in place. See
+[`docs/concept.md`](docs/concept.md) for the full design, including how each known
+failure mode maps to a design commitment.
 
 ## Contributing
 
