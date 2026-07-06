@@ -55,7 +55,11 @@ agents — for humans.*
 - `src/{detectors,explainers,competence,orchestrator}/README.md` — extension-point
   interfaces for contributors.
 - `integrations/claude-code/` — `PreToolUse` hook (the prototype target; not yet built).
-- `docs/` — `concept.md` (design + failure-mode→commitment map), `config-schema.md`.
+- `docs/` — `concept.md` (design + failure-mode→commitment map), `architecture.md`
+  (build-shape decision record), `reference.md` (plain-English "how it all works"),
+  `config-schema.md`.
+- `.claude/hooks/pre-push-guard.sh` — the tests-before-push gate (wired in
+  `.claude/settings.json`). Blocks `git push` when typecheck or card validation fails.
 
 ## Conventions
 
@@ -78,3 +82,24 @@ agents — for humans.*
   respects "silent by default" (mirror the CONTRIBUTING checklist).
 - Keep the gate concept-level: if you find yourself parsing code structure to decide
   whether to gate, step back — that's the wrong altitude.
+
+## Collaboration guardrails (with the maintainer)
+
+These four are load-bearing for how sessions run. Hold them the way you hold the five
+principles.
+
+1. **Permission before building.** Propose the plan and get an explicit go-ahead before
+   implementing. Reading, searching, and analysis are free; writing code/config/docs is
+   what needs sign-off. When the shape is ambiguous, ask (few, crisp questions) first.
+2. **Tests before push.** Never push to GitHub until `npm run typecheck` and
+   `npm run check:cards` are green. This is enforced by `.claude/hooks/pre-push-guard.sh`,
+   but treat the hook as a backstop, not a substitute for running them yourself.
+3. **Docs-parity at every major upgrade.** When a change lands, leave the docs matching
+   the code: CLAUDE.md layout, `docs/` (esp. `architecture.md` + `reference.md`), and the
+   session handoff in `local/handoffs/`. A fresh session must be able to trust the docs as
+   the current map — stale docs mis-steer the next session's direction.
+4. **Explain in depth.** The maintainer wants to stay an engineer, not an agent-rider
+   (this repo's whole thesis, applied to our own collaboration). Explanations should cover
+   how it works, how it's wired, the tools/protocols/tasks and code concepts involved, and
+   the pros/cons — with real-world analogies and comparisons. Default to teaching, not just
+   reporting a result. Deep explanation is the norm here, not the exception.
