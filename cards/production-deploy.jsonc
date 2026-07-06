@@ -1,0 +1,30 @@
+{
+  "id": "production-deploy",
+  "title": "Deploying to production",
+  "pattern": "production-deploy",
+  "category": "blastRadius",
+  "concepts": ["deploy-rollback", "stateful-effects", "code-vs-state"],
+  "mechanism": "A deploy swaps which build serves real traffic. The *code* swap is usually symmetric — you can point back at the previous build. But a running version doesn't just serve: it writes. Migrations run, rows get written in new shapes, queues and caches fill with new-format entries.",
+  "consequence": "Rolling back restores yesterday's code against *today's* state. Anything stateful the new version already did — schema changes, data written under new assumptions — does not roll back with it, and old code meeting new state is its own outage.",
+  "selection": {
+    "question": "Ten minutes after this deploy you need to undo it. What does redeploying the previous version actually restore?",
+    "options": [
+      {
+        "text": "Everything — deploys are snapshots, rolling back is symmetric.",
+        "misconception": "The build is a snapshot; production isn't. Ten minutes of the new version running means ten minutes of writes, migrations, and cache entries the old build never rolls back."
+      },
+      {
+        "text": "The code only. State the new version already changed — migrated schemas, data written in new shapes — stays changed, and old code may now misread it.",
+        "correct": true
+      },
+      {
+        "text": "Nothing needs restoring if you Ctrl-C the deploy fast enough.",
+        "misconception": "Interrupting a deploy client doesn't interrupt the platform — you mostly get an *unknown* state, which is worse than a completed deploy either way."
+      },
+      {
+        "text": "The platform held traffic on the old version pending your confirmation, so nothing happened yet.",
+        "misconception": "That's blue/green or canary behavior, which exists only if it was configured. A default deploy cuts traffic over as soon as the new build is live."
+      }
+    ]
+  }
+}

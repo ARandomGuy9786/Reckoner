@@ -1,0 +1,30 @@
+{
+  "id": "rm-recursive-force",
+  "title": "Recursive force delete (rm -rf)",
+  "pattern": "rm-recursive-force",
+  "category": "blastRadius",
+  "concepts": ["filesystem-unlink", "unrecoverable-delete"],
+  "mechanism": "rm unlinks directory entries at the filesystem level. Unlike a GUI delete, nothing moves to a Trash — the names are removed immediately and the space is marked reusable.",
+  "consequence": "Everything under the target is gone the moment the command returns. Recovery is filesystem forensics at best, and anything not tracked *and committed* in git — .env files, local databases, untracked work — has no other copy.",
+  "selection": {
+    "question": "rm -rf deletes the directory. Where does its content go?",
+    "options": [
+      {
+        "text": "The Trash / Recycle Bin, like deleting in Finder or Explorer.",
+        "misconception": "Trash is a GUI convention — the file manager moves files to a staging folder. rm talks straight to the filesystem; there is no staging step."
+      },
+      {
+        "text": "Nowhere. The entries are unlinked immediately; there's no undo, and recovery is disk forensics at best.",
+        "correct": true
+      },
+      {
+        "text": "It doesn't matter — git has everything anyway.",
+        "misconception": "Git only has what was tracked *and committed*. The most dangerous losses are exactly the untracked things living in a project dir: .env files, local data, work in progress."
+      },
+      {
+        "text": "A hidden temp area until the next reboot clears it.",
+        "misconception": "No mainstream filesystem parks unlinked files for later. Once the last reference is gone, the blocks are free to be overwritten at any moment."
+      }
+    ]
+  }
+}

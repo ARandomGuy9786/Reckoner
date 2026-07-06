@@ -1,0 +1,30 @@
+{
+  "id": "destructive-migration",
+  "title": "Destructive database migration",
+  "pattern": "destructive-migration",
+  "category": "blastRadius",
+  "concepts": ["schema-vs-data", "migration-irreversibility", "backup-vs-rollback"],
+  "mechanism": "Migrations change schema (the shape) and sometimes data (the contents). DROP, TRUNCATE, and DELETE destroy contents. A 'down' migration is just another migration that recreates the *shape* — it has no copy of the destroyed rows to put back.",
+  "consequence": "Once the transaction commits, the data in the dropped column/table is gone from the live database. Rolling back the migration restores an empty structure. Only a backup taken *before* the migration can restore the data itself.",
+  "selection": {
+    "question": "This migration drops a column in production. Afterwards, what can the down-migration restore?",
+    "options": [
+      {
+        "text": "Everything — that's what down-migrations are for.",
+        "misconception": "Down-migrations reverse *schema* changes. They're written before the data ever existed, so they recreate an empty column — there's no snapshot of the rows inside it."
+      },
+      {
+        "text": "The column's structure, but empty. The data itself is only recoverable from a backup taken before the migration ran.",
+        "correct": true
+      },
+      {
+        "text": "The data too, as long as you roll back inside the same session.",
+        "misconception": "An uncommitted transaction can roll back — but a completed migration has committed. After commit, the database keeps no accessible copy of what DROP removed."
+      },
+      {
+        "text": "Nothing needs restoring — the ORM keeps a model-level copy of the data.",
+        "misconception": "ORMs map code to the database; they don't shadow its contents. The database is the only home the data ever had."
+      }
+    ]
+  }
+}

@@ -8,6 +8,7 @@
   "scripts": {
     "demo": "tsx src/cli.ts",
     "gate": "tsx src/cli.ts",
+    "check:cards": "tsx src/cards-check.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

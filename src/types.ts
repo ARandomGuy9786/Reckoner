@@ -28,6 +28,36 @@ export interface AgentAction {
   summary: string;
   /** Optional extra context (files touched, tools, protocols). */
   detail?: string;
+  /**
+   * Tool identity, when the adapter knows it (e.g. "bash", "edit",
+   * "mcp__supabase__apply_migration"). Feeds deterministic Tier-0 matching.
+   */
+  tool?: string;
+  /**
+   * Coarse args as one flat string — a command line, a file path, a migration
+   * body. Deliberately coarse: Tier-0 matches tool identity + args patterns,
+   * never parsed code structure.
+   */
+  args?: string;
+}
+
+/**
+ * One deterministic match clause: case-insensitive regexes over the action's
+ * tool identity and/or coarse args. All present fields must match (AND);
+ * a card or pattern carries several clauses for alternatives (OR).
+ */
+export interface MatchClause {
+  tool?: string;
+  args?: string;
+}
+
+/** One option in a selection (multiple-choice) prediction. */
+export interface SelectionOption {
+  text: string;
+  /** Exactly one option per selection is correct. */
+  correct?: boolean;
+  /** For wrong options: why people believe this — shown after a wrong pick. */
+  misconception?: string;
 }
 
 /** Output of a detector: which trigger category an action falls into. */

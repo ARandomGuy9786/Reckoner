@@ -32,8 +32,9 @@ const DEFAULT_CONFIG_PATH = join(here, "..", "config", "reckoner.jsonc");
 /**
  * Strip // line comments and block comments from JSONC, respecting string
  * literals so a `//` inside a value or a URL is left intact.
+ * (Also used by the card loader.)
  */
-function stripJsonc(input: string): string {
+export function stripJsonc(input: string): string {
   let out = "";
   let inString = false;
   let escaped = false;

@@ -1,0 +1,30 @@
+{
+  "id": "auth-change",
+  "title": "Changing auth / session logic",
+  "pattern": "auth-change",
+  "category": "security",
+  "concepts": ["auth-fail-open", "session-validation", "negative-testing"],
+  "mechanism": "Auth code is a chain of checks where every link must *deny by default*. A subtle bug — a truthy return, a skipped await, a missing branch — usually doesn't break the login flow; it breaks the *rejection* flow.",
+  "consequence": "The classic failure is failing open: requests that should be rejected quietly pass. Everything looks fine in normal use, because logged-in users still work — the hole is only visible to someone probing without valid credentials.",
+  "selection": {
+    "question": "A subtle bug slips into this session-validation change. What does the classic failure look like?",
+    "options": [
+      {
+        "text": "Logins break loudly — users can't sign in, so you'd catch it within minutes.",
+        "misconception": "That's the *benign* failure mode (failing closed). The dangerous auth bugs are the quiet ones: the happy path keeps working while the deny path stops denying."
+      },
+      {
+        "text": "It fails open: invalid or missing sessions quietly pass the check, and normal testing shows nothing wrong because logged-in flows still work.",
+        "correct": true
+      },
+      {
+        "text": "The framework's built-in tests would catch any auth regression.",
+        "misconception": "Framework tests cover the framework, not your wiring of it. Fail-open bugs need *negative* tests — asserting that bad credentials are rejected — which most suites lack."
+      },
+      {
+        "text": "Only new sessions are affected; existing users are safe.",
+        "misconception": "Validation runs on every request, not at session creation. A broken check exposes all traffic, existing sessions included."
+      }
+    ]
+  }
+}

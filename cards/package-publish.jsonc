@@ -1,0 +1,30 @@
+{
+  "id": "package-publish",
+  "title": "Publishing to a public registry",
+  "pattern": "package-publish",
+  "category": "blastRadius",
+  "concepts": ["registry-permanence", "publish-irreversibility", "version-immutability"],
+  "mechanism": "Publishing uploads the package to a public registry that is immediately world-readable and aggressively mirrored, cached, and indexed. Registries treat published versions as immutable so that builds are reproducible.",
+  "consequence": "Within minutes the artifact exists in places you don't control. Unpublish is heavily restricted, the version number is burned either way, and anything sensitive inside the tarball (a bundled .env, a key in a config) must be treated as leaked and rotated.",
+  "selection": {
+    "question": "Five minutes after publishing you spot a mistake in the package. What are your real options?",
+    "options": [
+      {
+        "text": "npm unpublish — it removes the version like deleting a file.",
+        "misconception": "Unpublish is deliberately restricted (time windows, dependency rules), and mirrors and caches already copied the tarball. There is no 'delete' that reaches everywhere it went."
+      },
+      {
+        "text": "Republish the same version number with the fix.",
+        "misconception": "Registries refuse to overwrite a published version — immutability is what makes everyone's builds reproducible. The version number is burned."
+      },
+      {
+        "text": "Deprecate the bad version and publish a fixed one — and if a secret shipped in the tarball, rotate it, because copies already exist beyond your control.",
+        "correct": true
+      },
+      {
+        "text": "Nothing urgent — nobody knows the package exists yet.",
+        "misconception": "Registries are indexed and scraped continuously; secret-scanners watch new uploads specifically because they're such a reliable source of fresh credentials."
+      }
+    ]
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "id": "git-discard-local",
+  "title": "Discarding uncommitted work",
+  "pattern": "git-discard-local",
+  "category": "blastRadius",
+  "concepts": ["git-working-tree", "uncommitted-work-loss"],
+  "mechanism": "git reset --hard and git clean -f overwrite or delete the working tree to match a commit. Git's safety nets (reflog, object store) only cover things git has *stored* — commits, stashes, staged blobs. Never-committed edits exist only as bytes in your files.",
+  "consequence": "Uncommitted changes are destroyed in place. Reflog can recover abandoned *commits*, but not edits that were never committed; untracked files removed by clean -f aren't in git at all.",
+  "selection": {
+    "question": "git reset --hard wipes your uncommitted changes. Which of these gets them back?",
+    "options": [
+      {
+        "text": "git reflog — it tracks everything that happens in the repo.",
+        "misconception": "Reflog tracks where branch pointers *moved*, i.e. commits. Work that was never committed was never in the object store, so reflog has nothing to point back to."
+      },
+      {
+        "text": "Almost nothing: unstaged edits are simply gone. Only content git stored — commits, stashes, or staged blobs (via forensic git fsck) — is recoverable.",
+        "correct": true
+      },
+      {
+        "text": "Checking out the previous commit restores the working tree as it was.",
+        "misconception": "The previous commit contains what was *committed*, which is exactly not the uncommitted work you just lost."
+      },
+      {
+        "text": "Your editor's undo history always has it.",
+        "misconception": "Sometimes an open buffer saves you — but it's luck, not a mechanism: closed files, generated files, and anything edited by tools have no buffer to undo from."
+      }
+    ]
+  }
+}

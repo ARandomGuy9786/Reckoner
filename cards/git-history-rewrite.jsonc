@@ -1,0 +1,30 @@
+{
+  "id": "git-history-rewrite",
+  "title": "Rewriting shared git history",
+  "pattern": "git-history-rewrite",
+  "category": "blastRadius",
+  "concepts": ["git-history-rewrite", "commit-immutability", "remote-divergence"],
+  "mechanism": "Rebase, amend, and filter-branch don't edit commits — commits are immutable. They create *new* commits with new hashes and move your branch pointer to them. The old commits still exist; everything built on them now points at a history your branch no longer contains.",
+  "consequence": "If the rewritten commits were already pushed and others based work on them, every collaborator's branch now diverges from yours at the rewrite point. Their next pull produces duplicate commits and conflicts unless they deliberately rebase onto the new history.",
+  "selection": {
+    "question": "You rebase a branch that's already pushed, and a teammate has work based on it. What actually breaks?",
+    "options": [
+      {
+        "text": "Nothing — rebase just reorders the same commits, so their base is still there.",
+        "misconception": "Rebase looks like reordering, but each 'moved' commit is a brand-new commit with a new hash. The commits the teammate based work on are no longer in your branch's history."
+      },
+      {
+        "text": "Git blocks rebasing commits that were already pushed.",
+        "misconception": "Git happily rebases pushed commits — you only find out at push time, and --force 'fixes' the rejection in the worst possible way."
+      },
+      {
+        "text": "Their branch now points into an abandoned history: pulling yours creates duplicated commits and conflicts until they explicitly rebase onto the new history.",
+        "correct": true
+      },
+      {
+        "text": "Only the commit timestamps and messages change; the content links stay intact.",
+        "misconception": "A commit's identity covers its content, parent, author, and message. Change any of it — including just the parent — and it's a different commit."
+      }
+    ]
+  }
+}

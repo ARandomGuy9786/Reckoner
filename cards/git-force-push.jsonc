@@ -1,0 +1,30 @@
+{
+  "id": "git-force-push",
+  "title": "Force-push over remote history",
+  "pattern": "git-force-push",
+  "category": "blastRadius",
+  "concepts": ["git-history-rewrite", "remote-divergence", "branch-pointers"],
+  "mechanism": "A branch is just a pointer to a commit. A normal push only moves the remote pointer forward along history it already has; --force moves it wherever you say, abandoning whatever it pointed at before.",
+  "consequence": "Commits that were only reachable from the old remote pointer become unreachable. Anyone who hasn't pulled them keeps them only in their local clone; on the remote they are effectively deleted and will eventually be garbage-collected.",
+  "selection": {
+    "question": "Teammates have commits on this remote branch that you don't have locally. After your force-push, what happens to their commits?",
+    "options": [
+      {
+        "text": "Git merges them into your pushed history automatically.",
+        "misconception": "Push feels like a sync, so people assume it combines histories. A push never merges — and --force exists precisely to replace the remote history rather than build on it."
+      },
+      {
+        "text": "They're gone from the remote branch. They survive only in clones that already fetched them, and restoring them means digging up the old commit hashes.",
+        "correct": true
+      },
+      {
+        "text": "Git rejects the push with a conflict you have to resolve first.",
+        "misconception": "That's what a *plain* push does when histories diverge. The --force flag's whole job is to skip that safety check."
+      },
+      {
+        "text": "Nothing — commits are immutable, so they stay on the remote either way.",
+        "misconception": "Commits are immutable, but *branches are pointers*. A commit no branch points to is unreachable, and unreachable commits get garbage-collected."
+      }
+    ]
+  }
+}

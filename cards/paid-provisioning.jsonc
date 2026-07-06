@@ -1,0 +1,30 @@
+{
+  "id": "paid-provisioning",
+  "title": "Provisioning paid cloud resources",
+  "pattern": "paid-provisioning",
+  "category": "cost",
+  "concepts": ["cloud-billing", "resource-lifecycle", "allocation-vs-usage"],
+  "mechanism": "Provisioning tools (terraform apply, aws/gcloud create, …) are clients that ask the cloud to allocate resources. The resource's lifecycle then belongs to the cloud account, not to the tool, your terminal, or your laptop.",
+  "consequence": "Most provisioned resources bill for *allocation*, not usage — an idle instance or unattached volume costs the same as a busy one. Billing continues until something explicitly destroys the resource, including after everyone has forgotten it exists.",
+  "selection": {
+    "question": "The provisioning command succeeds. When does the resource it created stop costing money?",
+    "options": [
+      {
+        "text": "When it goes idle — no traffic, no charge.",
+        "misconception": "That's usage-based pricing, which covers some serverless products. Instances, volumes, clusters, and databases bill for being *allocated*; idle costs the same as busy."
+      },
+      {
+        "text": "When the provisioning process exits.",
+        "misconception": "The tool is just a client. The resource lives in the cloud account with its own lifecycle — closing the terminal doesn't deallocate anything."
+      },
+      {
+        "text": "Never, until something explicitly destroys it. Orphaned resources keep billing after everyone's forgotten them.",
+        "correct": true
+      },
+      {
+        "text": "At the end of the billing month, unless you renew it.",
+        "misconception": "Cloud resources don't expire; there's no renewal step to forget. The default is perpetual allocation — and perpetual billing."
+      }
+    ]
+  }
+}
