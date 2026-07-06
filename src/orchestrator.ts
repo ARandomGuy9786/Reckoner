@@ -1,6 +1,8 @@
 import type { CategoryConfig, ReckonerConfig } from "./config.js";
 import { learningActive } from "./config.js";
 import type { Competence } from "./competence.js";
+import type { InteractionEntry, InteractionLog } from "./interactions.js";
+import { fingerprint } from "./interactions.js";
 import type { Candidate, Resolution, Resolver } from "./resolver.js";
 import type {
   AgentAction,
@@ -67,6 +69,8 @@ export interface OrchestratorOptions {
   /** Tier-3 deep mode: free-text predictions graded by `grader`. Opt-in. */
   deepMode?: boolean;
   grader?: DeepGrader;
+  /** Local append-only log of gate outcomes. Absent = don't record. */
+  log?: InteractionLog;
 }
 
 const MODE_RANK: Record<Mode, number> = { gate: 3, coach: 2, observe: 1, off: 0 };
@@ -83,8 +87,14 @@ export class Orchestrator {
   async run(action: AgentAction, io: GateIO): Promise<GateOutcome[]> {
     const gates = await this.resolve(action);
     const outcomes: GateOutcome[] = [];
+    const fp = fingerprint(action);
     for (const gate of gates) {
-      outcomes.push(await this.runGate(gate, io));
+      const outcome = await this.runGate(gate, io);
+      outcomes.push(outcome);
+      // One append-only line per outcome — the trust ledger. Fingerprint only,
+      // never the raw action. Silent (no-gate) actions produce no outcome and
+      // are therefore not logged.
+      this.opts.log?.append(toEntry(fp, outcome));
     }
     return outcomes;
   }
@@ -211,6 +221,28 @@ export class Orchestrator {
     await io.predict(pred.prompt);
     return null;
   }
+}
+
+/** Reduce a gate outcome to a log row. Fingerprint is supplied by the caller. */
+function toEntry(fp: string, outcome: GateOutcome): InteractionEntry {
+  const { gate } = outcome;
+  const base = {
+    ts: new Date().toISOString(),
+    fingerprint: fp,
+    category: gate.candidate.trigger.category,
+    effectiveMode: gate.effectiveMode,
+    tier: gate.resolution?.tier ?? null,
+    cardId: gate.resolution?.cardId,
+  };
+  if (outcome.kind === "observed") {
+    // Observe never interrupts and never blocks: no verdict, always proceeds.
+    return { ...base, verdict: null, proceeded: true };
+  }
+  return {
+    ...base,
+    verdict: outcome.judgement?.verdict ?? null,
+    proceeded: outcome.proceeded,
+  };
 }
 
 /** String-compare grading: zero LLM, zero tokens. */

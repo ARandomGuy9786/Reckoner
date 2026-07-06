@@ -1,9 +1,11 @@
 import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
+import { dirname, join } from "node:path";
 import { loadCards } from "./cards.js";
 import { Competence } from "./competence.js";
 import { loadConfig } from "./config.js";
 import { Engine } from "./engine.js";
+import { FileInteractionLog } from "./interactions.js";
 import { Orchestrator } from "./orchestrator.js";
 import type { GateIO, ResolvedGate } from "./orchestrator.js";
 import { TieredResolver, policyFor } from "./resolver.js";
@@ -68,9 +70,16 @@ async function main() {
     );
   }
 
+  // The interaction log lives alongside the competence ledger in .reckoner/
+  // (both local, both gitignored) — one append-only line per gate outcome.
+  const log = new FileInteractionLog(
+    join(dirname(config.competence.ledgerPath), "interactions.jsonl"),
+  );
+
   const orchestrator = new Orchestrator(config, resolver, competence, {
     deepMode,
     grader: engine,
+    log,
   });
 
   const rl = createInterface({ input: stdin, output: stdout });
