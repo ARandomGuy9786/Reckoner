@@ -57,7 +57,11 @@ agents — for humans.*
   offline, `--deep` opts into Tier 3.
 - `src/{detectors,explainers,competence,orchestrator}/README.md` — extension-point
   interfaces for contributors.
-- `integrations/claude-code/` — `PreToolUse` hook (the prototype target; not yet built).
+- `integrations/claude-code/` — the `PreToolUse` hook adapter (prototype). Runs the
+  gate as the **deny-relay protocol** (hooks have no tty): deny carries the question,
+  the agent relays it via AskUserQuestion, the answer comes back through
+  `.reckoner/gate.answer`, grading is offline. Never emits `allow` except for its own
+  relay writes — passing a gate *defers* to the normal permission flow.
 - `docs/` — `concept.md` (design + failure-mode→commitment map), `architecture.md`
   (build-shape decision record), `reference.md` (plain-English "how it all works"),
   `config-schema.md`.

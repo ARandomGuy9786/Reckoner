@@ -256,7 +256,7 @@ nothing; there's no outcome to record.
 ## How the pieces are wired 🔌
 
 ```
-CLI adapter        Claude Code hook (Phase 3)        future adapters
+CLI adapter        Claude Code hook (prototype)      future adapters
       \                    |                            /
        ───────────── GateIO seam ──────────────────────
                 (AgentAction in, decision out)
@@ -365,7 +365,7 @@ version.
 | [`src/engine.ts`](../src/engine.ts) | Claude-backed Tier-2/3 provider |
 | [`src/config.ts`](../src/config.ts) | JSONC config loader |
 | [`src/cli.ts`](../src/cli.ts) | runnable test bench (`npm run demo`) |
-| [`integrations/claude-code/`](../integrations/claude-code) | the `PreToolUse` hook adapter (Phase 3, not yet built) |
+| [`integrations/claude-code/`](../integrations/claude-code) | the `PreToolUse` hook adapter (prototype — see its README for the deny-relay protocol) |
 
 ## Commands I'll need
 

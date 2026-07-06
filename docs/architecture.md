@@ -96,12 +96,32 @@ A card is the unit of contribution. Shape as built:
 Authoring guide (pedagogy, match-coarseness rules): `cards/CLAUDE.md`. Validation:
 `npm run check:cards`.
 
-## Claude Code integration (Phase 3 sketch)
+## Claude Code integration: the deny-relay protocol (decided, prototyped)
 
-`PreToolUse` hook. Tier-0 detect + card gates run **fully offline inside the hook**
-(selection delivered via the hook's ask mechanism). Subagent escalation only for
-novelty, per profile. The CLI remains the test bench for feeling and tuning cards.
-The macro **map** ("explain the system", never gated) is deferred out of v1 entirely.
+`PreToolUse` hook (`integrations/claude-code/hook.ts`). The original sketch assumed the
+selection could be asked *inside* the hook; that is impossible — **hook processes run
+without a controlling terminal** (no `/dev/tty`, Claude Code v2.1.139+). The gate
+therefore runs as a state machine across hook invocations:
+
+1. **Deny + relay** — on a Tier-0/1 hit, save a pending gate
+   (`.reckoner/gate.pending.json`) and deny; the deny reason carries the selection
+   question and instructs the agent to present it to the user **verbatim via
+   AskUserQuestion**, write the chosen letter to `.reckoner/gate.answer` (the hook
+   auto-allows exactly this write), and re-run the original command.
+2. **Grade on re-run** — string compare, zero LLM; record to ledger + interaction log.
+   Correct → defer with the reveal as a `systemMessage`. Wrong + `coach` → defer and
+   teach. Wrong + `gate` → deny with the reveal and require an explicit
+   understanding-ack (`.reckoner/gate.ack`) before a re-run opens the gate.
+3. **Never allow, always defer** — passing the gate returns *no* permission decision,
+   so the action falls through to the user's normal permission flow. Reckoner gates
+   comprehension *on top of* permission and can never lower it. The only `allow` the
+   hook emits is for its own one-letter relay writes.
+
+Known trust seam (accepted for the prototype): the agent relays the question and could
+answer itself; the transcript makes that auditable. Tier-2 capsule spawn from hook
+context is still undesigned (open flag) — the hook is cards-only, zero tokens. The CLI
+remains the test bench for feeling and tuning cards. The macro **map** ("explain the
+system", never gated) is deferred out of v1 entirely.
 
 ## Build phases
 
@@ -113,7 +133,8 @@ The macro **map** ("explain the system", never gated) is deferred out of v1 enti
 2. **Trust & measurement** — append-only interaction log (JSONL in `.reckoner/`);
    budget guard + per-session spawn caps; config schema v2 (`resolver` section +
    profile presets encoding the table above).
-3. **First real adapter** — the `PreToolUse` hook as above.
+3. **First real adapter** — the `PreToolUse` hook via the deny-relay protocol above
+   (prototyped; dogfooding decides what changes).
 
 The system's quality now lives in **card coverage and card quality** — which is
 exactly where an OSS project wants it: contributors write cards, not infrastructure.
