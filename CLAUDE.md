@@ -35,12 +35,23 @@ agents — for humans.*
   (`blastRadius`, `security`, `cost`, `novelty`, `architecture`) × `mode`
   (`off`/`observe`/`coach`/`gate`) × `depth` × `learningMode`. This is the product's
   soul; changes here are load-bearing.
-- `src/engine.ts` — Claude-backed detector / explainer / grader.
+- `cards/` — the authored comprehension-card library (Tier 1; zero tokens, forever).
+  `cards/CLAUDE.md` is the authoring guide — card writing can be delegated there.
+- `src/resolver.ts` — the tiered Resolver (T0 deterministic detect → T1 cards →
+  T2 capsule provider) with profile policy and the budget guard. Unbudgeted LLM
+  calls must stay structurally impossible.
+- `src/detectors/deterministic.ts` — Tier-0 boundary patterns (tool identity +
+  coarse args; never parsed code).
+- `src/cards.ts` — card schema (zod) + JSONC loader; `npm run check:cards`.
+- `src/engine.ts` — Claude-backed Tier-2/3 provider (capsules for novel actions,
+  deep-mode grading). Never on the default path.
 - `src/orchestrator.ts` — the gate loop and the silent-by-default resolution order
-  (detect → config → competence → cap). One auditable path from action to gate.
+  (detect → config → competence → cap → content). One auditable path from action
+  to gate; content resolution (which may spend) comes last.
 - `src/competence.ts` — the local competence ledger (the moat).
 - `src/config.ts` — JSONC config loader.
-- `src/cli.ts` — the runnable prototype (`npm run demo`).
+- `src/cli.ts` — the runnable test bench (`npm run demo`); default path is fully
+  offline, `--deep` opts into Tier 3.
 - `src/{detectors,explainers,competence,orchestrator}/README.md` — extension-point
   interfaces for contributors.
 - `integrations/claude-code/` — `PreToolUse` hook (the prototype target; not yet built).

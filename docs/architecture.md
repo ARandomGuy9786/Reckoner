@@ -69,17 +69,20 @@ intelligence is sourced and spent:
 (push, migration, deploy, delete, spend) — not per-edit. Edits are cheap to undo;
 pushes aren't. This keeps the builder profile near-silent and near-free.
 
-## Card format (to be schema'd in Phase 1)
+## Card format (schema'd in Phase 1 — `src/cards.ts` is authoritative)
 
-A card is the unit of contribution. Sketch:
+A card is the unit of contribution. Shape as built:
 
 ```jsonc
 {
   "id": "git-force-push",
-  "match": { /* tool identity + coarse arg patterns — no code parsing */ },
+  "title": "Force-push over remote history",
+  "pattern": "git-force-push",     // keys to a built-in Tier-0 boundary pattern id, OR
+  // "match": [{ "tool": "…", "args": "…" }],  // own coarse clauses — no code parsing
   "category": "blastRadius",
   "concepts": ["git-history-rewrite", "remote-divergence"],
-  "consequence": "…what actually happens…",
+  "mechanism": "…how it works, concept-level…",
+  "consequence": "…what actually happens, incl. what cannot be undone…",
   "selection": {
     "question": "Teammates have commits on this branch. After the force-push, what happens to their work?",
     "options": [
@@ -89,6 +92,9 @@ A card is the unit of contribution. Sketch:
   }
 }
 ```
+
+Authoring guide (pedagogy, match-coarseness rules): `cards/CLAUDE.md`. Validation:
+`npm run check:cards`.
 
 ## Claude Code integration (Phase 3 sketch)
 
