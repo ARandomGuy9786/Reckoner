@@ -144,9 +144,11 @@ Reckoner to make an unbudgeted LLM call.** Concretely, in
 [`src/resolver.ts`](../src/resolver.ts), when your profile forbids escalation the capsule
 provider **is not even retained** — Tier 2 isn't "skipped by an if-statement," it's
 unreachable because the object that could make the call doesn't exist. On top of that a
-per-session **spawn cap** bounds how many capsules can ever be generated, and a failed
-capsule **downgrades** the gate to silent rather than blocking or erroring. Belt, suspenders,
-and a second belt.
+per-session **spawn cap** (`resolver.maxSpawnsPerSession` in the config — no longer a
+hardcoded constant) bounds how many capsules can ever be generated; it's a **required**
+input when the resolver is constructed, so there is no code path that spends without a
+stated bound. And a failed capsule **downgrades** the gate to silent rather than blocking
+or erroring. Belt, suspenders, and a second belt.
 
 ---
 
@@ -187,7 +189,8 @@ detect → config → competence → cap → content → run → record
    a capsule). Ordering is deliberate: **content resolution comes last, so a gate that won't
    fire can never cost a token.** No content affordable → downgrade to silent observe.
 6. **run** — for `observe`, just log; for `coach`/`gate`, do predict-then-reveal.
-7. **record** — write the outcome to the competence ledger.
+7. **record** — write the outcome to the competence ledger *and* append one line to
+   the [interaction log](#the-interaction-log-a-local-trust-ledger-) (see below).
 
 The four **modes** a category can resolve to, from quietest to loudest: `off` (nothing) →
 `observe` (log only, never interrupts) → `coach` (teach, then allow) → `gate` (block until
@@ -226,6 +229,30 @@ touching the rest of the system.
 
 ---
 
+## The interaction log: a local trust ledger 🧾 ([`src/interactions.ts`](../src/interactions.ts))
+
+The ledger models *what you know*; the interaction log records *what actually happened at the
+gate*. It's an **append-only JSONL** file (`.reckoner/interactions.jsonl`) — one line per gate
+outcome — sitting right next to the ledger, and just as **local and gitignored**. Each line
+carries: a timestamp, a **fingerprint** of the action, the category, the effective mode, the
+tier that supplied the content, the card id, the prediction verdict, and whether the action
+proceeded.
+
+The word *fingerprint* is load-bearing: the log stores a one-way **hash of the tool + coarse
+args**, never the raw command or file path. So you can answer "how often does the force-push
+gate fire, and do I predict it right?" without the log ever holding a transcript of your
+commands. It's the same privacy stance as the ledger — a measurement surface that reveals
+*patterns*, not *content*.
+
+Why it exists: Reckoner's whole thesis is that the gate should **earn its interruption**. You
+can't judge that from vibes. The log is the evidence — later it can drive "this gate fires a
+lot and you always nail it, want to silence it?" — and it's wired as a swappable sink (the
+`InteractionLog` interface), so a test or a future adapter can substitute an in-memory or
+no-op recorder without touching the gate loop. A fully silent action (no gate fired) writes
+nothing; there's no outcome to record.
+
+---
+
 ## How the pieces are wired 🔌
 
 ```
@@ -239,7 +266,8 @@ CLI adapter        Claude Code hook (Phase 3)        future adapters
               Resolver  Competence  Config
               /   \          |         |
          detect  cards   .reckoner/  reckoner.jsonc
-         (T0)    (T1)    (local ledger)
+         (T0)    (T1)    (ledger +
+                          interactions)
             \
           Engine (T2/T3, only reachable when the profile + budget allow)
 ```
@@ -272,6 +300,11 @@ categories × { mode, depth, learningMode }
 - **depth:** `concept` / `consequence` / `wiring` — how deep the reveal goes.
 - **learningMode:** `on` / `off` / `inherit` — whether it asks you to predict, or just
   explains.
+
+Alongside the matrix, the **`resolver`** section governs the paid tiers: a
+`maxSpawnsPerSession` cap and a per-profile `escalate`/`deepModeAllowed` policy. Tiers 0–1
+are always free and untouched by it. Full field-by-field docs live in
+[`config-schema.md`](config-schema.md).
 
 It's authored as **JSONC** (JSON + comments) so the file can document itself; a small
 comment-stripping loader ([`src/config.ts`](../src/config.ts)) feeds it to `JSON.parse`,
@@ -328,6 +361,7 @@ version.
 | [`src/resolver.ts`](../src/resolver.ts) | the tiered resolver + profile policy + budget guard |
 | [`src/orchestrator.ts`](../src/orchestrator.ts) | the gate loop (detect→…→record) |
 | [`src/competence.ts`](../src/competence.ts) | the local competence ledger (the moat) |
+| [`src/interactions.ts`](../src/interactions.ts) | the append-only local interaction log |
 | [`src/engine.ts`](../src/engine.ts) | Claude-backed Tier-2/3 provider |
 | [`src/config.ts`](../src/config.ts) | JSONC config loader |
 | [`src/cli.ts`](../src/cli.ts) | runnable test bench (`npm run demo`) |
@@ -341,5 +375,5 @@ npm run check:cards                        # validate every card in cards/ (offl
 npm run demo                               # the gate loop on a sample force-push (offline)
 npm run demo -- git push --force origin x  # feel the gate on any command
 npm run demo -- --deep <command>           # Tier-3 deep mode (needs ANTHROPIC_API_KEY)
-rm -rf .reckoner                           # reset the local competence ledger while testing
+rm -rf .reckoner                           # reset the local ledger + interaction log while testing
 ```

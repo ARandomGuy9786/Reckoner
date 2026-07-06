@@ -8,7 +8,7 @@
   // where the competence model says it's above your current frontier.
 
   "$schema": "./reckoner.schema.json",
-  "version": 1,
+  "version": 2,
 
   // Starting point for the matrix below. One of: "learner" | "builder" | "expert".
   // A preset just seeds the `categories` defaults; anything you set explicitly wins.
@@ -27,6 +27,27 @@
     "skipBelowFrontier": true,
     // How quickly confidence in a "known" concept decays (days). null = never decays.
     "decayHalfLifeDays": 90
+  },
+
+  // How intelligence is SOURCED and SPENT (docs/architecture.md, "Profiles drive
+  // the resolver"). Tiers 0–1 (detect + cards) are always free; this section only
+  // governs Tier 2 (spawned capsule) and Tier 3 (deep mode).
+  "resolver": {
+    // The budget guard's bound: how many Tier-2 subagent spawns a single session
+    // may make. Tiers 0–1 don't count. Reaching it downgrades further novel gates
+    // to observe rather than spending more.
+    "maxSpawnsPerSession": 2,
+
+    // Per-profile policy. `escalate` decides WHEN Tier 2 may run:
+    //   "always"    — cards first, but escalate readily (learner)
+    //   "gate-only" — escalate only for a novel action at a hard gate (builder)
+    //   "never"     — cards only; the provider is never even retained (expert)
+    // `deepMode` allows Tier-3 free-text + LLM grading at all for that profile.
+    "profiles": {
+      "learner": { "escalate": "always",    "deepModeAllowed": true },
+      "builder": { "escalate": "gate-only", "deepModeAllowed": true },
+      "expert":  { "escalate": "never",     "deepModeAllowed": false }
+    }
   },
 
   // The matrix. Each category resolves to a behavior:

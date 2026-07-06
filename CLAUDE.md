@@ -31,10 +31,11 @@ agents — for humans.*
 
 ## Layout
 
-- `config/reckoner.jsonc` + `reckoner.schema.json` — the behavior contract. Categories
-  (`blastRadius`, `security`, `cost`, `novelty`, `architecture`) × `mode`
-  (`off`/`observe`/`coach`/`gate`) × `depth` × `learningMode`. This is the product's
-  soul; changes here are load-bearing.
+- `config/reckoner.jsonc` + `reckoner.schema.json` — the behavior contract (schema v2).
+  Categories (`blastRadius`, `security`, `cost`, `novelty`, `architecture`) × `mode`
+  (`off`/`observe`/`coach`/`gate`) × `depth` × `learningMode`, plus the `resolver`
+  section (per-session Tier-2 spawn cap + per-profile escalate/deep-mode policy). This
+  is the product's soul; changes here are load-bearing.
 - `cards/` — the authored comprehension-card library (Tier 1; zero tokens, forever).
   `cards/CLAUDE.md` is the authoring guide — card writing can be delegated there.
 - `src/resolver.ts` — the tiered Resolver (T0 deterministic detect → T1 cards →
@@ -49,7 +50,9 @@ agents — for humans.*
   (detect → config → competence → cap → content). One auditable path from action
   to gate; content resolution (which may spend) comes last.
 - `src/competence.ts` — the local competence ledger (the moat).
-- `src/config.ts` — JSONC config loader.
+- `src/interactions.ts` — the append-only interaction log (`.reckoner/interactions.jsonl`;
+  one line per gate outcome, fingerprinted, local-only). A swappable `InteractionLog` seam.
+- `src/config.ts` — JSONC config loader (applies `resolver` defaults for v1 configs).
 - `src/cli.ts` — the runnable test bench (`npm run demo`); default path is fully
   offline, `--deep` opts into Tier 3.
 - `src/{detectors,explainers,competence,orchestrator}/README.md` — extension-point

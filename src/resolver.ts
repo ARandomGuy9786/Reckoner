@@ -57,7 +57,12 @@ export interface ResolverPolicy {
   deepModeAllowed: boolean;
 }
 
-export const PROFILE_POLICIES: Record<Profile, ResolverPolicy> = {
+/**
+ * The shipped policy table (docs/architecture.md "Profiles drive the resolver").
+ * config.ts uses this as the default `resolver.profiles` block; the config is
+ * the source of truth at runtime, so a user can retune escalation per profile.
+ */
+export const DEFAULT_PROFILE_POLICIES: Record<Profile, ResolverPolicy> = {
   // Learning is the product; spend is the tuition.
   learner: { escalate: "always", deepModeAllowed: true },
   // Cards first; subagent only for novel actions at irreversible boundaries.
@@ -66,12 +71,13 @@ export const PROFILE_POLICIES: Record<Profile, ResolverPolicy> = {
   expert: { escalate: "never", deepModeAllowed: false },
 };
 
-export function policyFor(profile: string): ResolverPolicy {
-  return PROFILE_POLICIES[profile as Profile] ?? PROFILE_POLICIES.builder;
+/** Resolve a profile's policy from a config-supplied table, defaulting to builder. */
+export function policyFor(
+  profile: string,
+  policies: Record<string, ResolverPolicy>,
+): ResolverPolicy {
+  return policies[profile] ?? policies.builder ?? DEFAULT_PROFILE_POLICIES.builder;
 }
-
-/** Per-session cap on Tier-2 spawns (a config knob in schema v2 — Phase 2). */
-const DEFAULT_SPAWN_CAP = 2;
 
 export interface Resolver {
   /** Tier 0: deterministic, free, side-effect-free. Decides IF anything fires. */
@@ -96,8 +102,10 @@ export class TieredResolver implements Resolver {
   constructor(
     private readonly cards: Card[],
     private readonly policy: ResolverPolicy,
+    // Per-session Tier-2 spawn cap. Required (no default): the budget bound is
+    // always a stated decision sourced from config, never a silent constant.
+    private readonly spawnCap: number,
     provider?: CapsuleProvider,
-    private readonly spawnCap: number = DEFAULT_SPAWN_CAP,
   ) {
     // Budget guard: when the policy forbids escalation, the provider is not
     // even retained — Tier 2 is structurally unreachable, not just skipped.

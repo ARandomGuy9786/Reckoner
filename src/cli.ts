@@ -50,14 +50,19 @@ async function main() {
 
   const config = loadConfig();
   const competence = new Competence(config.competence);
-  const policy = policyFor(config.profile);
+  const policy = policyFor(config.profile, config.resolver.profiles);
 
   const { cards, problems } = loadCards();
   for (const p of problems) console.error(c.red(`card problem: ${p}`));
 
   // Tier 2/3 exist only when credentials do; the default path never needs them.
   const engine = hasCredentials() ? new Engine() : undefined;
-  const resolver = new TieredResolver(cards, policy, engine);
+  const resolver = new TieredResolver(
+    cards,
+    policy,
+    config.resolver.maxSpawnsPerSession,
+    engine,
+  );
 
   const deepMode = deepRequested && Boolean(engine) && policy.deepModeAllowed;
   if (deepRequested && !deepMode) {

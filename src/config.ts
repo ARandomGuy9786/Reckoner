@@ -3,11 +3,20 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import type { Category, Depth, LearningMode, Mode } from "./types.js";
 import { CATEGORIES } from "./types.js";
+import type { ResolverPolicy } from "./resolver.js";
+import { DEFAULT_PROFILE_POLICIES } from "./resolver.js";
 
 export interface CategoryConfig {
   mode: Mode;
   depth: Depth;
   learningMode: LearningMode;
+}
+
+export interface ResolverConfig {
+  /** Per-session cap on Tier-2 subagent spawns — the budget guard's bound. */
+  maxSpawnsPerSession: number;
+  /** How each profile sources and spends intelligence (escalate + deep mode). */
+  profiles: Record<string, ResolverPolicy>;
 }
 
 export interface CompetenceConfig {
@@ -22,9 +31,16 @@ export interface ReckonerConfig {
   profile: string;
   learningMode: boolean;
   competence: CompetenceConfig;
+  resolver: ResolverConfig;
   categories: Record<Category, CategoryConfig>;
   gate: { maxPromptsPerAction: number };
 }
+
+/** Shipped resolver defaults, applied when the config omits the section. */
+const DEFAULT_RESOLVER: ResolverConfig = {
+  maxSpawnsPerSession: 2,
+  profiles: DEFAULT_PROFILE_POLICIES,
+};
 
 const here = dirname(fileURLToPath(import.meta.url));
 const DEFAULT_CONFIG_PATH = join(here, "..", "config", "reckoner.jsonc");
@@ -90,5 +106,13 @@ export function loadConfig(path: string = DEFAULT_CONFIG_PATH): ReckonerConfig {
       throw new Error(`config: missing category "${cat}" in ${path}`);
     }
   }
+
+  // Backward-compat: a v1 config (no resolver section) still loads with the
+  // shipped defaults. The budget guard is unaffected — the cap is always set.
+  parsed.resolver = {
+    maxSpawnsPerSession:
+      parsed.resolver?.maxSpawnsPerSession ?? DEFAULT_RESOLVER.maxSpawnsPerSession,
+    profiles: parsed.resolver?.profiles ?? DEFAULT_RESOLVER.profiles,
+  };
   return parsed;
 }

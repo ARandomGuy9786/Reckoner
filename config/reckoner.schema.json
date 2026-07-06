@@ -10,7 +10,7 @@
     "$schema": { "type": "string" },
     "version": {
       "type": "integer",
-      "const": 1,
+      "const": 2,
       "description": "Config schema version."
     },
     "profile": {
@@ -46,6 +46,24 @@
         }
       }
     },
+    "resolver": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "How intelligence is sourced and spent. Governs Tier 2 (spawned capsule) and Tier 3 (deep mode) only; Tiers 0-1 are always free.",
+      "properties": {
+        "maxSpawnsPerSession": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 2,
+          "description": "Budget guard: max Tier-2 subagent spawns per session. 0 disables Tier 2 entirely."
+        },
+        "profiles": {
+          "type": "object",
+          "description": "Per-profile escalation policy. The active `profile` selects one.",
+          "additionalProperties": { "$ref": "#/$defs/resolverPolicy" }
+        }
+      }
+    },
     "categories": {
       "type": "object",
       "additionalProperties": false,
@@ -72,6 +90,21 @@
     }
   },
   "$defs": {
+    "resolverPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "escalate": {
+          "type": "string",
+          "enum": ["always", "gate-only", "never"],
+          "description": "When Tier 2 may run: always (learner) / only at a hard gate (builder) / never — provider not even retained (expert)."
+        },
+        "deepModeAllowed": {
+          "type": "boolean",
+          "description": "Whether Tier-3 free-text + LLM grading may be enabled for this profile."
+        }
+      }
+    },
     "category": {
       "type": "object",
       "additionalProperties": false,
