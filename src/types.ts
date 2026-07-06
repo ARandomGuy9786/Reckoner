@@ -71,13 +71,24 @@ export interface DetectedTrigger {
   concepts: string[];
 }
 
-/** The reveal produced by an explainer, rendered at the configured depth. */
+/**
+ * How the user is asked to predict, BEFORE the reveal.
+ * - "selection": multiple choice, graded by string compare — zero LLM, zero
+ *   tokens, one keypress of friction. The default everywhere.
+ * - "freeText": open prediction graded by an LLM — Tier-3 deep mode only,
+ *   explicit opt-in, never the default.
+ */
+export type PredictionSpec =
+  | { kind: "selection"; question: string; options: SelectionOption[] }
+  | { kind: "freeText"; prompt: string };
+
+/** The reveal, rendered at the configured depth. */
 export interface Explanation {
   intent: string;
   mechanism: string;
   consequence: string;
-  /** The question asked BEFORE reveal (predict-then-reveal). */
-  predictPrompt: string;
+  /** The prediction asked BEFORE reveal (predict-then-reveal). */
+  prediction: PredictionSpec;
   concepts: string[];
 }
 

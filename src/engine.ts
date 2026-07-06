@@ -7,37 +7,36 @@ import type {
   Explanation,
   Judgement,
 } from "./types.js";
+import type { CapsuleProvider } from "./resolver.js";
 
-// Reckoner's own engine calls Claude. The subject is always the reasoning chain
-// (intent -> mechanism -> consequence), never the raw code — this keeps the
-// engine language-agnostic. We prompt for strict JSON and validate with zod, so
-// the engine works across SDK versions without the structured-output helper.
+// The Claude-backed Tier-2/3 provider behind the Resolver interface. The
+// default path (Tier-0 detect + Tier-1 cards) never reaches this file — it
+// exists for novelty: actions the card library doesn't cover yet, and opt-in
+// deep-mode grading. The subject is always the reasoning chain
+// (intent -> mechanism -> consequence), never the raw code. We prompt for
+// strict JSON and validate with zod, so the engine works across SDK versions
+// without the structured-output helper.
 
 const MODEL = "claude-opus-4-8";
 
-const TriggerSchema = z.object({
-  triggers: z.array(
-    z.object({
-      category: z.enum([
-        "blastRadius",
-        "security",
-        "cost",
-        "novelty",
-        "architecture",
-      ]),
-      confidence: z.number(),
-      reason: z.string(),
-      concepts: z.array(z.string()),
-    }),
-  ),
-});
-
-const ExplanationSchema = z.object({
+const CapsuleSchema = z.object({
   intent: z.string(),
   mechanism: z.string(),
   consequence: z.string(),
-  predictPrompt: z.string(),
   concepts: z.array(z.string()),
+  selection: z.object({
+    question: z.string(),
+    options: z
+      .array(
+        z.object({
+          text: z.string(),
+          correct: z.boolean().optional(),
+          misconception: z.string().optional(),
+        }),
+      )
+      .min(2)
+      .max(5),
+  }),
 });
 
 const JudgementSchema = z.object({
@@ -45,7 +44,7 @@ const JudgementSchema = z.object({
   note: z.string(),
 });
 
-export class Engine {
+export class Engine implements CapsuleProvider {
   private client: Anthropic;
 
   constructor(client?: Anthropic) {
@@ -54,27 +53,15 @@ export class Engine {
     this.client = client ?? new Anthropic();
   }
 
-  /** Classify an action into trigger categories. */
-  async detect(action: AgentAction): Promise<DetectedTrigger[]> {
-    const system =
-      "You are Reckoner's detector. Classify a proposed agent action into risk " +
-      "categories a human should understand before approving. Reason at the level " +
-      "of intent, mechanism, and consequence — not lines of code. Categories: " +
-      "blastRadius (reversibility/scope of damage: deletes, migrations, force-push, " +
-      "infra teardown), security (auth, secrets, permissions, network exposure), " +
-      "cost (paid APIs, provisioning, spending money), novelty (concepts/protocols/" +
-      "tools likely new to the user), architecture (cross-cutting changes; how things " +
-      "are wired). Emit only categories that genuinely apply, each with a 0..1 " +
-      "confidence, a one-sentence reason, and the underlying concepts it touches. " +
-      "Return an empty list for trivial, localized, fully-reversible actions.\n\n" +
-      'Respond with ONLY a JSON object: {"triggers": [{"category", "confidence", ' +
-      '"reason", "concepts": []}]}. No prose, no markdown fences.';
-    const out = await this.callJSON(TriggerSchema, system, describe(action), 2048);
-    return out.triggers;
-  }
-
-  /** Produce the reveal for a triggered action, at the requested depth. */
-  async explain(action: AgentAction, depth: Depth): Promise<Explanation> {
+  /**
+   * Tier 2: generate a card-shaped capsule (selection prediction included)
+   * for a novel action no authored card covers.
+   */
+  async capsule(
+    action: AgentAction,
+    trigger: DetectedTrigger,
+    depth: Depth,
+  ): Promise<Explanation> {
     const depthNote =
       depth === "concept"
         ? "Keep it to the core concept and the single most important consequence."
@@ -82,24 +69,41 @@ export class Engine {
           ? "Cover the concept and the concrete consequences: what changes, what could break."
           : "Go deep on the wiring: the protocols, tools, and how the pieces connect, plus consequences.";
     const system =
-      "You are Reckoner's explainer. Turn a proposed agent action into a " +
+      "You are Reckoner's capsule generator. Turn a proposed agent action into a " +
       "predict-then-reveal exchange for a human who reasons about functionality " +
       "and consequences, not line-by-line code.\n" +
       "- intent: restate plainly what the human asked for.\n" +
       "- mechanism: how it will be wired — the protocols, tools, and concepts.\n" +
       "- consequence: what changes, what could break, what it costs.\n" +
-      "- predictPrompt: ONE sharp question asked BEFORE the reveal that makes the " +
-      "user predict a consequence they could be wrong about (not 'what does this do?'). " +
-      "The gap between their guess and reality is the whole point.\n" +
       "- concepts: the concepts this exchange covers.\n" +
+      "- selection: ONE sharp multiple-choice question asked BEFORE the reveal, " +
+      "about a consequence the user could plausibly be wrong about (never 'what " +
+      "does this do?'). 3-4 options, exactly one with \"correct\": true. Every " +
+      "wrong option encodes a REAL misconception someone smart might hold, with a " +
+      '"misconception" field explaining why people believe it and why it is wrong.\n' +
       depthNote +
-      "\n\nRespond with ONLY a JSON object matching keys " +
-      "intent, mechanism, consequence, predictPrompt, concepts (array). " +
-      "No prose, no markdown fences.";
-    return this.callJSON(ExplanationSchema, system, describe(action), 3072);
+      "\n\nRespond with ONLY a JSON object with keys intent, mechanism, " +
+      "consequence, concepts (array), selection {question, options: " +
+      '[{text, correct?, misconception?}]}. No prose, no markdown fences.';
+    const user =
+      describe(action) +
+      `\n\nDetected risk: ${trigger.category} — ${trigger.reason}`;
+    const capsule = await this.callJSON(CapsuleSchema, system, user, 3072);
+
+    if (capsule.selection.options.filter((o) => o.correct).length !== 1) {
+      // Malformed pedagogy is worse than none — let the resolver downgrade.
+      throw new Error("capsule: selection must have exactly one correct option");
+    }
+    return {
+      intent: capsule.intent,
+      mechanism: capsule.mechanism,
+      consequence: capsule.consequence,
+      concepts: capsule.concepts,
+      prediction: { kind: "selection", ...capsule.selection },
+    };
   }
 
-  /** Judge the user's prediction against the real consequence. */
+  /** Tier 3 (deep mode): judge a free-text prediction against the reveal. */
   async judge(
     explanation: Explanation,
     prediction: string,
@@ -113,8 +117,12 @@ export class Engine {
       "note: one or two sentences naming the specific gap or confirming the insight. " +
       "Address the user directly.\n\n" +
       'Respond with ONLY a JSON object: {"verdict", "note"}. No prose, no fences.';
+    const question =
+      explanation.prediction.kind === "selection"
+        ? explanation.prediction.question
+        : explanation.prediction.prompt;
     const user =
-      `Question asked: ${explanation.predictPrompt}\n\n` +
+      `Question asked: ${question}\n\n` +
       `Actual consequence: ${explanation.consequence}\n\n` +
       `User's prediction: ${prediction}`;
     return this.callJSON(JudgementSchema, system, user, 1024);
@@ -150,6 +158,8 @@ function stripFences(text: string): string {
 function describe(action: AgentAction): string {
   let s = `Intent (what the human asked for): ${action.intent}\n`;
   s += `Proposed action (what the agent will do): ${action.summary}`;
+  if (action.tool) s += `\nTool: ${action.tool}`;
+  if (action.args) s += `\nArgs: ${action.args}`;
   if (action.detail) s += `\nAdditional context: ${action.detail}`;
   return s;
 }
