@@ -1,6 +1,10 @@
 # Reckoner local state — never commit a user's competence ledger
 .reckoner/
 
+# Local workspace — personal notes, session handoffs, starter prompts, flags.
+# Never committed; see local/README.md for the session workflow.
+local/
+
 # Dependencies
 node_modules/
 .pnp
