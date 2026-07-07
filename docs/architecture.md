@@ -112,7 +112,11 @@ therefore runs as a state machine across hook invocations:
    (first dogfood finding, 2026-07-07): the relay strips all context around the
    question, so a bare question reads as the agent asking a preference. The payload
    itself opens with "prediction check — exactly one option is correct" plus what a
-   wrong answer costs in the current mode.
+   wrong answer costs in the current mode. **The pending exchange survives
+   interleaved unrelated actions** (second dogfood finding, 2026-07-07): agents run
+   reads/checks between the relay and the re-run, and treating any non-matching
+   action as abandonment re-asked the question in a loop. Only TTL expiry or a new
+   gate firing replaces a pending exchange.
 2. **Grade on re-run** — string compare, zero LLM; record to ledger + interaction log.
    Correct → defer with the reveal as a `systemMessage`. Wrong + `coach` → defer and
    teach. Wrong + `gate` → deny with the reveal; the ack question quotes the

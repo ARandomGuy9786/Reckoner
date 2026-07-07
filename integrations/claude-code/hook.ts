@@ -215,16 +215,20 @@ async function main(): Promise<void> {
 
   const fp = fingerprint(action);
   const pending = readJson<PendingGate>(PENDING);
-  const fresh =
-    pending !== null &&
-    pending.fingerprint === fp &&
-    Date.now() - pending.savedAt < PENDING_TTL_MS;
 
-  if (fresh && pending) {
-    resumeGate(pending);
-    return; // unreachable — resumeGate always exits
+  if (pending) {
+    const expired = Date.now() - pending.savedAt >= PENDING_TTL_MS;
+    if (!expired && pending.fingerprint === fp) {
+      resumeGate(pending); // rounds 2/3 — always exits
+    }
+    if (expired) clearState(); // abandoned exchange: start over
+    // A DIFFERENT action while a gate is pending must NOT destroy the gate.
+    // Agents routinely interleave reads/checks between relaying the question
+    // and re-running the gated command; clearing state here re-opened the
+    // gate on every re-run — the "asks the same question forever" loop.
+    // The pending gate survives; freshGate() overwrites it only if this
+    // action itself fires a gate of its own.
   }
-  if (pending) clearState(); // stale or different action: start over
 
   await freshGate(action, fp);
 }

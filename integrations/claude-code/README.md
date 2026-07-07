@@ -61,6 +61,13 @@ you: "force-push this"
                            before a re-run opens the gate
 ```
 
+**The pending gate survives interleaved actions.** Agents routinely run reads
+and checks (`ls`, `git status`, …) between relaying the question and re-running
+the gated command. Those unrelated calls pass through without touching the
+saved exchange — only expiry (15 min) or a *new* gate firing replaces it.
+(Second dogfood finding: clearing state on any non-matching action re-opened
+the gate on every re-run — the agent asked the same question in a loop.)
+
 **The frame travels inside the payload.** First dogfood finding: a bare
 question relayed through AskUserQuestion reads as the *agent* asking your
 preference ("where should this be backed up?"), not as a prediction with a
