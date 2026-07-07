@@ -107,11 +107,17 @@ therefore runs as a state machine across hook invocations:
    (`.reckoner/gate.pending.json`) and deny; the deny reason carries the selection
    question and instructs the agent to present it to the user **verbatim via
    AskUserQuestion**, write the chosen letter to `.reckoner/gate.answer` (the hook
-   auto-allows exactly this write), and re-run the original command.
+   auto-allows exactly this write, incl. a self-healing `mkdir -p` prefix), and
+   re-run the original command. **The frame lives inside the verbatim payload**
+   (first dogfood finding, 2026-07-07): the relay strips all context around the
+   question, so a bare question reads as the agent asking a preference. The payload
+   itself opens with "prediction check — exactly one option is correct" plus what a
+   wrong answer costs in the current mode.
 2. **Grade on re-run** — string compare, zero LLM; record to ledger + interaction log.
    Correct → defer with the reveal as a `systemMessage`. Wrong + `coach` → defer and
-   teach. Wrong + `gate` → deny with the reveal and require an explicit
-   understanding-ack (`.reckoner/gate.ack`) before a re-run opens the gate.
+   teach. Wrong + `gate` → deny with the reveal; the ack question quotes the
+   consequence being accepted verbatim, and an explicit accept
+   (`.reckoner/gate.ack`) is required before a re-run opens the gate.
 3. **Never allow, always defer** — passing the gate returns *no* permission decision,
    so the action falls through to the user's normal permission flow. Reckoner gates
    comprehension *on top of* permission and can never lower it. The only `allow` the

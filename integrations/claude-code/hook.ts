@@ -127,11 +127,25 @@ function clearState(): void {
   for (const p of [PENDING, ANSWER, ACK]) rmSync(p, { force: true });
 }
 
+/**
+ * The user-visible payload. The frame ("this is a prediction check", what a
+ * wrong answer costs) must live INSIDE the verbatim text: AskUserQuestion
+ * strips all surrounding context, so anything only said to the agent never
+ * reaches the user — dogfooding showed a bare question reads as the agent
+ * asking a preference, which kills the predict-then-reveal mechanic.
+ */
 function formatQuestion(p: PendingGate): string {
+  const stakes =
+    p.mode === "gate"
+      ? "If you answer wrong, the action stays blocked until you've read the real consequence and explicitly accept it."
+      : "A wrong answer won't block the action — you'll see the real consequence either way.";
   const opts = p.options
     .map((o, i) => `  (${LETTERS[i]}) ${o.text}`)
     .join("\n");
-  return `${p.question}\n${opts}`;
+  return (
+    `Reckoner prediction check — exactly one option is correct; the answer is ` +
+    `revealed after you commit. ${stakes}\n\n${p.question}\n${opts}`
+  );
 }
 
 /** The deny reason for round 1: the exchange, plus the relay protocol. */
@@ -140,13 +154,15 @@ function round1Reason(p: PendingGate, reason: string): string {
     `RECKONER COMPREHENSION GATE [${p.category} · ${p.mode}] — ${reason}\n\n` +
     `Before this action can run, the USER must answer a prediction question. ` +
     `Follow this protocol exactly:\n` +
-    `1. Present the question and options below to the user with the ` +
-    `AskUserQuestion tool, VERBATIM. Do NOT answer it yourself, do NOT hint ` +
+    `1. Present the question below to the user with the AskUserQuestion tool: ` +
+    `header "Reckoner", question text and options VERBATIM — including the ` +
+    `"prediction check" preamble. This is Reckoner's question, not yours: add ` +
+    `NO commentary before or after it, do NOT answer it yourself, do NOT hint ` +
     `at the answer, do NOT explain the options.\n` +
     `2. Write the letter of the user's choice to ${ANSWER} ` +
-    `(e.g. \`echo "b" > ${ANSWER}\`).\n` +
+    `(e.g. \`mkdir -p ${STATE_DIR} && echo "b" > ${ANSWER}\`).\n` +
     `3. Re-run the original command, unchanged.\n\n` +
-    `QUESTION (before you approve — what happens?):\n${formatQuestion(p)}`
+    `QUESTION:\n${formatQuestion(p)}`
   );
 }
 
@@ -178,10 +194,12 @@ async function main(): Promise<void> {
 
   // The protocol's own relay write must not recurse into a gate — and gets a
   // real "allow" so the user isn't permission-prompted for Reckoner plumbing.
-  // Deliberately narrow: a bare echo of one letter into the answer/ack file.
+  // Deliberately narrow: a bare echo of one letter into the answer/ack file,
+  // optionally preceded by the exact mkdir that makes the write self-healing
+  // when .reckoner/ was removed mid-exchange.
   if (
     action.tool === "bash" &&
-    /^\s*echo\s+"?[a-j]?"?\s*>\s*\.reckoner\/gate\.(answer|ack)\s*$/.test(
+    /^\s*(?:mkdir\s+-p\s+\.reckoner\s*&&\s*)?echo\s+"?[a-j]?"?\s*>\s*\.reckoner\/gate\.(answer|ack)\s*$/.test(
       action.args ?? "",
     )
   ) {
@@ -240,8 +258,11 @@ function resumeGate(p: PendingGate): never {
     }
     deny(
       `RECKONER GATE still closed: the user has not confirmed understanding yet. ` +
-        `Ask the user (AskUserQuestion) to confirm they accept: "${p.consequence}" ` +
-        `Then write the ack (\`echo > ${ACK}\`) and re-run the original command.`,
+        `Ask the user with AskUserQuestion (header "Reckoner"), VERBATIM: ` +
+        `"Proceeding means accepting this consequence: ${p.consequence} — ` +
+        `do you understand and accept it?" with options "Accept and proceed" ` +
+        `and "Abandon the action". Only if they accept: write the ack ` +
+        `(\`mkdir -p ${STATE_DIR} && echo > ${ACK}\`) and re-run the original command.`,
     );
   }
 
@@ -286,10 +307,13 @@ function resumeGate(p: PendingGate): never {
   deny(
     `RECKONER GATE held — the user's prediction was wrong.\n\n` +
       `Show the user this reveal, verbatim:\n${revealText(p, judgement)}\n\n` +
-      `Then ask the user (AskUserQuestion) whether they understand and accept ` +
-      `this consequence. Only if they confirm: write the ack ` +
-      `(\`echo > ${ACK}\`) and re-run the original command. If they decline, ` +
-      `abandon the action.`,
+      `Then ask the user with AskUserQuestion (header "Reckoner") this ` +
+      `question, VERBATIM, so what they accept is in front of them:\n` +
+      `"Proceeding means accepting this consequence: ${p.consequence} — ` +
+      `do you understand and accept it?" with options "Accept and proceed" ` +
+      `and "Abandon the action". Add no commentary of your own. Only if they ` +
+      `accept: write the ack (\`mkdir -p ${STATE_DIR} && echo > ${ACK}\`) and ` +
+      `re-run the original command. If they decline, abandon the action.`,
   );
 }
 

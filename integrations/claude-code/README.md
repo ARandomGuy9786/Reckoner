@@ -48,7 +48,7 @@ invocations, relayed through the agent:
 you: "force-push this"
   └ agent runs Bash(git push --force …)
       └ hook: Tier-0 detect → card → save pending gate → DENY
-        reason (seen by agent): the selection question + relay protocol
+        reason (seen by agent): the framed question + relay protocol
   └ agent presents the question to YOU via AskUserQuestion, verbatim
   └ you pick (a)/(b)/(c)/(d)
   └ agent writes the letter to .reckoner/gate.answer   ← hook auto-allows this
@@ -57,9 +57,21 @@ you: "force-push this"
           correct        → let through* + reveal as a systemMessage
           wrong (coach)  → let through* + teach (misconception + reality)
           wrong (gate)   → DENY again with the reveal; you must explicitly
-                           confirm understanding (.reckoner/gate.ack) before
-                           a re-run opens the gate
+                           accept the quoted consequence (.reckoner/gate.ack)
+                           before a re-run opens the gate
 ```
+
+**The frame travels inside the payload.** First dogfood finding: a bare
+question relayed through AskUserQuestion reads as the *agent* asking your
+preference ("where should this be backed up?"), not as a prediction with a
+right answer — which kills the predict-then-reveal mechanic. So the verbatim
+text itself now opens with "Reckoner prediction check — exactly one option is
+correct; the answer is revealed after you commit" plus what a wrong answer
+costs in the current mode (gate: blocked-until-accept; coach: proceeds either
+way). Same rule at the ack step: the consequence being accepted is quoted
+inside the question, so accepting means having just read it. Anything said
+only to the agent never reaches you — the relay strips all surrounding
+context.
 
 \* "Let through" = **defer**, not allow: the action falls back into Claude Code's
 normal permission flow, so your own permission settings still apply. Reckoner
