@@ -61,6 +61,27 @@ you: "force-push this"
                            before a re-run opens the gate
 ```
 
+**Round 0 (novelty, Tier 2).** If a boundary fires but *no card covers it*, the hook
+generates a card-shaped capsule out-of-band before round 1 — the hook process can't
+call the model or spawn, so it relays a subagent spawn the same way it relays the
+question:
+
+```
+  └ agent runs Bash(<novel boundary, no card>)
+      └ hook: cache miss + budget left → save request → DENY
+        reason (seen by agent): spawn a subagent with THIS capsule prompt,
+        write its JSON to .reckoner/gate.capsule.json, re-run   ← write auto-allowed
+  └ agent spawns a cheap subagent → writes the capsule JSON → re-runs
+      └ hook: validate vs the shared CapsuleSchema → cache under the action
+        fingerprint → charge the persisted per-session spawn budget → round 1
+```
+
+The capsule is cached at `.reckoner/capsules/<fingerprint>.json` (cross-session — the
+same novelty is never paid for twice) and the spawn budget lives in
+`.reckoner/spawns.json` keyed by `session_id` (on disk because each hook invocation is
+a fresh process — an in-memory cap would reset every round). Over budget → silent
+observe, no spawn. A malformed capsule fails open (the action proceeds ungated, once).
+
 **The envelope carries protocol state only — never risk content.** Agents
 narrate deny reasons to the user, so a risk summary in the deny header arrives
 as an explanation *before* the question — inverting predict-then-reveal (third
@@ -94,9 +115,10 @@ normal permission flow, so your own permission settings still apply. Reckoner
 gates *comprehension on top of* permission; it never lowers permission. The only
 `allow` the hook ever emits is for its own one-letter relay writes.
 
-Everything on this path is Tier 0/1 (deterministic detect + authored cards):
-**zero tokens, no API key**. There is no capsule provider in the hook yet — the
-Tier-2 spawn protocol from hook context is still an open design flag.
+The default path (round 1) is Tier 0/1 (deterministic detect + authored cards):
+**zero tokens, no API key**. Tier 2 (round 0, above) is reached only for a boundary
+no card covers, and even then the spend is a relayed subagent on your own session
+budget — the hook process itself never calls the model.
 
 ## Honest limitations (prototype)
 

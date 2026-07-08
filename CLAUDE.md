@@ -44,6 +44,10 @@ agents — for humans.*
 - `src/detectors/deterministic.ts` — Tier-0 boundary patterns (tool identity +
   coarse args; never parsed code).
 - `src/cards.ts` — card schema (zod) + JSONC loader; `npm run check:cards`.
+- `src/capsule.ts` — the shared Tier-2 capsule contract: `CapsuleSchema` (zod), the
+  generation prompt, and the card-shaping helpers. Both Tier-2 paths validate against
+  this one definition — `engine.ts` (produces a capsule via the model) and the Claude
+  Code hook (validates a capsule relayed from a spawned subagent), so they can't drift.
 - `src/engine.ts` — Claude-backed Tier-2/3 provider (capsules for novel actions,
   deep-mode grading). Never on the default path.
 - `src/orchestrator.ts` — the gate loop and the silent-by-default resolution order
@@ -60,8 +64,11 @@ agents — for humans.*
 - `integrations/claude-code/` — the `PreToolUse` hook adapter (prototype). Runs the
   gate as the **deny-relay protocol** (hooks have no tty): deny carries the question,
   the agent relays it via AskUserQuestion, the answer comes back through
-  `.reckoner/gate.answer`, grading is offline. Never emits `allow` except for its own
-  relay writes — passing a gate *defers* to the normal permission flow.
+  `.reckoner/gate.answer`, grading is offline. For a novel boundary no card covers, a
+  **round-0 capsule request** relays a subagent spawn (validated vs `capsule.ts`,
+  cached per fingerprint, charged against a persisted per-session spawn budget in
+  `.reckoner/spawns.json`). Never emits `allow` except for its own relay writes —
+  passing a gate *defers* to the normal permission flow.
 - `docs/` — `concept.md` (design + failure-mode→commitment map), `architecture.md`
   (build-shape decision record), `reference.md` (plain-English "how it all works"),
   `config-schema.md`.

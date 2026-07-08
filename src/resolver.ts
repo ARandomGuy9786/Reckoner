@@ -47,6 +47,26 @@ export interface CapsuleProvider {
   judge(explanation: Explanation, prediction: string): Promise<Judgement>;
 }
 
+/**
+ * Signal from a provider that cannot synchronously produce a capsule and needs
+ * the ADAPTER to source one out-of-band. The Claude Code hook throws this on a
+ * cache miss: hook processes can't spawn a subagent, so the gate must relay the
+ * spawn through the agent (deny → agent spawns → writes capsule → re-run). The
+ * resolver re-throws it unchanged; every OTHER provider failure downgrades to
+ * observe. Carries everything the adapter needs to build the relay request.
+ */
+export class CapsuleRelayNeeded extends Error {
+  constructor(
+    readonly fingerprint: string,
+    readonly action: AgentAction,
+    readonly trigger: DetectedTrigger,
+    readonly depth: Depth,
+  ) {
+    super("Reckoner: capsule relay needed");
+    this.name = "CapsuleRelayNeeded";
+  }
+}
+
 export type Profile = "learner" | "builder" | "expert";
 
 /** How a profile sources and spends intelligence (docs/architecture.md table). */
@@ -166,8 +186,11 @@ export class TieredResolver implements Resolver {
         depth,
       );
       return { tier: 2, source: "capsule", explanation };
-    } catch {
-      // A failed capsule must not block or crash the gate loop: downgrade.
+    } catch (err) {
+      // A capsule the adapter must source out-of-band is not a failure: let the
+      // relay signal propagate so the adapter can run its request protocol.
+      if (err instanceof CapsuleRelayNeeded) throw err;
+      // Any other failed capsule must not block or crash the gate loop: downgrade.
       return null;
     }
   }

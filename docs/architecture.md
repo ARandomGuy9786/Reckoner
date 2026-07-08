@@ -132,10 +132,49 @@ therefore runs as a state machine across hook invocations:
    hook emits is for its own one-letter relay writes.
 
 Known trust seam (accepted for the prototype): the agent relays the question and could
-answer itself; the transcript makes that auditable. Tier-2 capsule spawn from hook
-context is still undesigned (open flag) — the hook is cards-only, zero tokens. The CLI
-remains the test bench for feeling and tuning cards. The macro **map** ("explain the
-system", never gated) is deferred out of v1 entirely.
+answer itself; the transcript makes that auditable. The CLI remains the test bench for
+feeling and tuning cards. The macro **map** ("explain the system", never gated) is
+deferred out of v1 entirely.
+
+### Tier-2 from the hook: the capsule-request protocol (decided, prototyped)
+
+A novel boundary — one Tier-0 detects but no authored card covers — needs a
+card-shaped capsule generated on the fly. The hook process can't call the model or
+spawn a subagent (it's detached), so capsule *generation* runs as a **round 0**
+prepended to the deny-relay, mirroring how the question is relayed:
+
+1. **Cache first.** `.reckoner/capsules/<fingerprint>.json` (`fingerprint =
+   sha256(tool+args)`, cross-session). A hit resolves as Tier-2 content and goes
+   straight to the round-1 gate — *the same novelty is never paid for twice*.
+2. **Budget guard, persisted.** On a miss, the per-session spawn count in
+   `.reckoner/spawns.json` (keyed by Claude Code's `session_id`) is checked. Over
+   the cap (`resolver.maxSpawnsPerSession`) → downgrade to a silent observe, no
+   request emitted. This *must* be on disk: `TieredResolver.spawnsUsed` is in-memory
+   and every hook invocation is a fresh process, so an in-memory cap is no cap at all
+   once the hook has a provider. The counter is charged when a valid capsule is
+   ingested (proof a spawn produced output), keyed by session so a new conversation
+   resets naturally.
+3. **Relay the spawn.** Under budget, save a fingerprint-guarded request
+   (`.reckoner/gate.capsule.request`) and deny: the agent spawns a subagent (cheap
+   model, isolated context, bundled with the session budget — no separate bill),
+   relays it a prompt built from the **shared `CapsuleSchema` prompt** in
+   `src/capsule.ts`, writes the returned JSON to `.reckoner/gate.capsule.json`, and
+   re-runs. The envelope discipline holds: the request carries protocol state only,
+   and the subagent prompt describes the action but **not** the trigger's risk
+   reason — the subagent derives the consequence, so nothing pre-reveals the answer.
+4. **Ingest on re-run.** Validate the capsule against `CapsuleSchema` (the *exact*
+   schema the engine produces against — extracted to `src/capsule.ts` so the two
+   Tier-2 paths can't drift), cache it, charge the counter, then open the normal
+   round-1 gate. A malformed capsule **fails open** (the action proceeds ungated,
+   once) — a broken gate must never wedge the workflow.
+
+The mechanism (`CapsuleProvider` throwing `CapsuleRelayNeeded`, which
+`TieredResolver.content` re-throws instead of downgrading) keeps the orchestrator's
+`detect → config → competence → cap → content` pipeline as the single source of which
+candidate is worth spending on — the adapter runs the relay for exactly that
+candidate. Same trust seam as the question relay (the agent could fabricate a capsule;
+the transcript makes it auditable). Still zero tokens *in the hook*; the spend is the
+relayed subagent, on the user's own session budget.
 
 ## Build phases
 

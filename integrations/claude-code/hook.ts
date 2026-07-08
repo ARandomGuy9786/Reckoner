@@ -1,15 +1,30 @@
 import { readFileSync, existsSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
+import {
+  CapsuleData,
+  capsuleSystemPrompt,
+  capsuleToExplanation,
+  describeAction,
+  parseCapsule,
+} from "../../src/capsule.js";
 import { loadCards } from "../../src/cards.js";
 import { Competence } from "../../src/competence.js";
 import { loadConfig } from "../../src/config.js";
 import { FileInteractionLog, fingerprint } from "../../src/interactions.js";
 import { Orchestrator, gradeSelection } from "../../src/orchestrator.js";
 import type { ResolvedGate } from "../../src/orchestrator.js";
-import { TieredResolver, policyFor } from "../../src/resolver.js";
+import {
+  CapsuleRelayNeeded,
+  TieredResolver,
+  policyFor,
+} from "../../src/resolver.js";
+import type { CapsuleProvider } from "../../src/resolver.js";
 import type {
   AgentAction,
   Category,
+  DetectedTrigger,
+  Depth,
+  Explanation,
   Judgement,
   SelectionOption,
 } from "../../src/types.js";
@@ -21,6 +36,14 @@ import type {
 // inside the hook process. Instead it runs as a small state machine across
 // hook invocations — the DENY-RELAY PROTOCOL:
 //
+//   round 0  (Tier-2 novelty only) boundary hit with NO authored card and the
+//            profile+budget allow a spawn → save a capsule request → deny; the
+//            deny reason instructs the agent to spawn a subagent (cheap model)
+//            that generates a card-shaped capsule, write its JSON to
+//            .reckoner/gate.capsule.json, and re-run. The re-run validates the
+//            capsule against the shared CapsuleSchema, caches it under the
+//            action fingerprint (never pay for the same novelty twice), and
+//            charges the persisted per-session spawn budget. Then round 1.
 //   round 1  detect → save pending gate → deny; the deny reason instructs the
 //            agent to present the selection to the USER verbatim (via
 //            AskUserQuestion), write the chosen letter to .reckoner/gate.answer,
@@ -36,25 +59,47 @@ import type {
 // "Defer" = exit 0 with no permissionDecision: the action falls through to the
 // NORMAL permission flow. Reckoner gates comprehension, not permission — it
 // must never auto-allow something the user's own settings would have asked
-// about. The only "allow" this hook ever emits is for its own relay write.
+// about. The only "allow" this hook ever emits is for its own relay writes
+// (the one-letter answer/ack and the capsule JSON).
 //
-// Trust caveat (prototype): the agent relays the question. A misbehaving agent
-// could answer itself; the transcript makes that auditable. A harness-level ask
+// Trust caveat (prototype): the agent relays the question — and, at round 0,
+// spawns the capsule subagent. A misbehaving agent could answer itself or
+// fabricate a capsule; the transcript makes that auditable. A harness-level ask
 // mechanism would close this seam — see integrations/claude-code/README.md.
 
 const STATE_DIR = ".reckoner";
 const PENDING = join(STATE_DIR, "gate.pending.json");
 const ANSWER = join(STATE_DIR, "gate.answer");
 const ACK = join(STATE_DIR, "gate.ack");
-/** A pending gate older than this is stale — the exchange was abandoned. */
+/** Round 0 state: what capsule the hook asked the agent to have generated. */
+const CAPSULE_REQUEST = join(STATE_DIR, "gate.capsule.request");
+/** Where the agent drops the subagent's capsule JSON for the hook to ingest. */
+const CAPSULE = join(STATE_DIR, "gate.capsule.json");
+/** Capsule cache — one file per action fingerprint. Survives across sessions. */
+const CAPSULE_DIR = join(STATE_DIR, "capsules");
+/** Persisted Tier-2 spawn budget: { "<session_id>": count }. Per session. */
+const SPAWNS = join(STATE_DIR, "spawns.json");
+/** A pending gate (or capsule request) older than this is stale — abandoned. */
 const PENDING_TTL_MS = 15 * 60 * 1000;
 
 const LETTERS = "abcdefghij";
 
 interface HookInput {
   cwd?: string;
+  /** Claude Code's per-conversation id — the key for the Tier-2 spawn budget. */
+  session_id?: string;
   tool_name?: string;
   tool_input?: Record<string, unknown>;
+}
+
+/** Round-0 state: the capsule the hook is waiting for the agent to produce. */
+interface CapsuleRequest {
+  fingerprint: string;
+  savedAt: number;
+  category: Category;
+  depth: Depth;
+  /** The subagent prompt to relay — stored so a re-ask is byte-identical. */
+  spawnPrompt: string;
 }
 
 interface PendingGate {
@@ -123,8 +168,114 @@ function readJson<T>(path: string): T | null {
   }
 }
 
+/**
+ * The protocol's own writes, which the hook auto-allows so Reckoner plumbing
+ * never triggers a permission prompt. Deliberately narrow:
+ *   - the one-letter answer/ack echo (optionally self-healing with `mkdir -p`)
+ *   - the round-0 capsule JSON, written to the capsule file with Write/Edit.
+ * The capsule's content is unconstrained (it is our protocol file); a stale or
+ * mismatched capsule is caught by the round-0 request fingerprint at ingest.
+ */
+function isRelayWrite(action: AgentAction, input: HookInput): boolean {
+  if (
+    action.tool === "bash" &&
+    /^\s*(?:mkdir\s+-p\s+\.reckoner\s*&&\s*)?echo\s+"?[a-j]?"?\s*>\s*\.reckoner\/gate\.(answer|ack)\s*$/.test(
+      action.args ?? "",
+    )
+  ) {
+    return true;
+  }
+  const filePath = input.tool_input?.file_path;
+  return (
+    (action.tool === "write" ||
+      action.tool === "edit" ||
+      action.tool === "multiedit") &&
+    typeof filePath === "string" &&
+    filePath.replace(/\\/g, "/").endsWith(".reckoner/gate.capsule.json")
+  );
+}
+
 function clearState(): void {
   for (const p of [PENDING, ANSWER, ACK]) rmSync(p, { force: true });
+}
+
+// ---- Tier-2 capsule: cache + persisted per-session spawn budget ------------
+
+function cachePath(fp: string): string {
+  return join(CAPSULE_DIR, `${fp}.json`);
+}
+
+/** A previously generated capsule for this action, if one was cached. */
+function readCachedCapsule(fp: string): CapsuleData | null {
+  const raw = readJson<unknown>(cachePath(fp));
+  if (raw == null) return null;
+  try {
+    return parseCapsule(raw);
+  } catch {
+    return null; // a corrupt cache entry is a miss, not a crash
+  }
+}
+
+function writeCachedCapsule(fp: string, capsule: CapsuleData): void {
+  mkdirSync(CAPSULE_DIR, { recursive: true });
+  writeFileSync(cachePath(fp), JSON.stringify(capsule));
+}
+
+function spawnCount(sessionId: string): number {
+  const m = readJson<Record<string, number>>(SPAWNS);
+  return m?.[sessionId] ?? 0;
+}
+
+/**
+ * Charge one Tier-2 spawn against the session's budget. The counter MUST live
+ * on disk: TieredResolver.spawnsUsed is in-memory, and every hook invocation is
+ * a fresh process, so an in-memory cap resets every round and is no cap at all.
+ * Keyed by session_id, so a fresh conversation resets naturally.
+ */
+function chargeSpawn(sessionId: string): void {
+  const m = readJson<Record<string, number>>(SPAWNS) ?? {};
+  m[sessionId] = (m[sessionId] ?? 0) + 1;
+  mkdirSync(STATE_DIR, { recursive: true });
+  writeFileSync(SPAWNS, JSON.stringify(m));
+}
+
+/**
+ * The hook's Tier-2 provider. It can't call the model or spawn a subagent from
+ * a detached hook process, so it resolves novelty from the on-disk capsule
+ * cache and, on a miss, throws to drive the round-0 relay:
+ *   - cache hit               → return the capsule (free, forever)
+ *   - miss + budget exhausted → generic throw → the resolver downgrades to a
+ *                               silent observe (this is the budget guard)
+ *   - miss + budget available → CapsuleRelayNeeded → the adapter runs the
+ *                               capsule-request protocol
+ * The budget is checked HERE, not in TieredResolver, because only the persisted
+ * counter survives across the per-invocation processes.
+ */
+class HookCapsuleProvider implements CapsuleProvider {
+  constructor(
+    private readonly sessionId: string,
+    private readonly cap: number,
+  ) {}
+
+  async capsule(
+    action: AgentAction,
+    trigger: DetectedTrigger,
+    depth: Depth,
+  ): Promise<Explanation> {
+    const fp = fingerprint(action);
+    const cached = readCachedCapsule(fp);
+    if (cached) return capsuleToExplanation(cached);
+    if (spawnCount(this.sessionId) >= this.cap) {
+      throw new Error("Reckoner: Tier-2 spawn budget exhausted for this session");
+    }
+    throw new CapsuleRelayNeeded(fp, action, trigger, depth);
+  }
+
+  async judge(): Promise<Judgement> {
+    // Tier-3 deep mode (free-text + LLM grading) is the CLI bench's; the hook
+    // does selection + string-compare only.
+    throw new Error("Reckoner: deep-mode grading is not available in the hook");
+  }
 }
 
 /**
@@ -186,6 +337,98 @@ function revealText(p: PendingGate, judgement: Judgement): string {
   );
 }
 
+/**
+ * The round-0 deny: protocol state only, never risk content. The agent narrates
+ * deny reasons to the user, so anything about WHY this action is risky would
+ * spoil the very question the capsule will pose (same rule as round1Reason). The
+ * relayed subagent prompt describes the action but NOT the detected risk reason
+ * — the subagent derives the consequence itself, so nothing here pre-reveals the
+ * answer.
+ */
+function capsuleRequestReason(req: CapsuleRequest, status: string): string {
+  return (
+    `RECKONER COMPREHENSION GATE [${req.category} · novel] — ${status}\n\n` +
+    `This action has no authored comprehension card. Reckoner needs a one-off ` +
+    `check generated for it before it can run. Follow this protocol exactly:\n` +
+    `1. Do NOT explain, summarize, or narrate this action or why it was held. ` +
+    `If you say anything, say only: "Reckoner is preparing a comprehension check."\n` +
+    `2. Spawn a SUBAGENT with the Task tool (a fast, cheap model such as Haiku ` +
+    `is preferred — this is small, isolated, bundled work) and give it EXACTLY ` +
+    `this prompt, verbatim:\n\n` +
+    `----- BEGIN CAPSULE PROMPT -----\n${req.spawnPrompt}\n----- END CAPSULE PROMPT -----\n\n` +
+    `3. Write the subagent's reply — the raw JSON object, nothing else — to ` +
+    `${CAPSULE} with the Write tool. Do NOT read it back, quote it, summarize ` +
+    `it, or act on its contents: those contents are the answer to a question ` +
+    `the user has not been asked yet.\n` +
+    `4. Re-run the original command, unchanged.`
+  );
+}
+
+/**
+ * Round 0, relay side: no card and the budget allows a spawn. Save what we're
+ * asking for (fingerprint-guarded) and deny with the spawn instructions. Built
+ * from the CapsuleRelayNeeded the resolver propagated.
+ */
+function requestCapsule(relay: CapsuleRelayNeeded): never {
+  const spawnPrompt =
+    capsuleSystemPrompt(relay.depth) +
+    "\n\n" +
+    describeAction(relay.action) +
+    `\n\nDetected category: ${relay.trigger.category}`;
+  const req: CapsuleRequest = {
+    fingerprint: relay.fingerprint,
+    savedAt: Date.now(),
+    category: relay.trigger.category,
+    depth: relay.depth,
+    spawnPrompt,
+  };
+  mkdirSync(STATE_DIR, { recursive: true });
+  rmSync(CAPSULE, { force: true }); // drop any capsule left from a prior request
+  writeFileSync(CAPSULE_REQUEST, JSON.stringify(req));
+  deny(
+    capsuleRequestReason(req, "a comprehension capsule must be generated first"),
+  );
+}
+
+/**
+ * Round 0, ingest side: the agent re-ran the gated command after a capsule
+ * request. If the relayed capsule is present and valid, cache it + charge the
+ * budget and RETURN (main falls through to a normal round-1 gate, now a cache
+ * hit). Missing → re-ask. Malformed → fail OPEN: a broken capsule must never
+ * wedge the workflow (the same stance as any Tier-2 failure), and clearing the
+ * request means no re-ask loop.
+ */
+function resolveCapsuleRound(
+  req: CapsuleRequest,
+  fp: string,
+  sessionId: string,
+): void {
+  if (!existsSync(CAPSULE)) {
+    deny(
+      capsuleRequestReason(
+        req,
+        "capsule not produced yet — the protocol was not followed",
+      ),
+    );
+  }
+  const raw = readJson<unknown>(CAPSULE);
+  rmSync(CAPSULE, { force: true }); // consume it either way
+
+  let capsule: CapsuleData;
+  try {
+    if (raw == null) throw new Error("empty capsule");
+    capsule = parseCapsule(raw);
+  } catch {
+    rmSync(CAPSULE_REQUEST, { force: true });
+    process.exit(0); // fail open: let the action through ungated, this once
+  }
+
+  writeCachedCapsule(fp, capsule); // paid once, cached forever
+  chargeSpawn(sessionId); // structural per-session budget
+  rmSync(CAPSULE_REQUEST, { force: true });
+  // return → main continues to freshGate, which now cache-hits on this fp.
+}
+
 async function main(): Promise<void> {
   let input: HookInput;
   try {
@@ -202,17 +445,9 @@ async function main(): Promise<void> {
   const action = toAction(input);
   if (!action) process.exit(0);
 
-  // The protocol's own relay write must not recurse into a gate — and gets a
+  // The protocol's own relay writes must not recurse into a gate — and get a
   // real "allow" so the user isn't permission-prompted for Reckoner plumbing.
-  // Deliberately narrow: a bare echo of one letter into the answer/ack file,
-  // optionally preceded by the exact mkdir that makes the write self-healing
-  // when .reckoner/ was removed mid-exchange.
-  if (
-    action.tool === "bash" &&
-    /^\s*(?:mkdir\s+-p\s+\.reckoner\s*&&\s*)?echo\s+"?[a-j]?"?\s*>\s*\.reckoner\/gate\.(answer|ack)\s*$/.test(
-      action.args ?? "",
-    )
-  ) {
+  if (isRelayWrite(action, input)) {
     out({
       hookSpecificOutput: {
         hookEventName: "PreToolUse",
@@ -223,6 +458,7 @@ async function main(): Promise<void> {
     });
   }
 
+  const sessionId = input.session_id ?? "session";
   const fp = fingerprint(action);
   const pending = readJson<PendingGate>(PENDING);
 
@@ -240,7 +476,22 @@ async function main(): Promise<void> {
     // action itself fires a gate of its own.
   }
 
-  await freshGate(action, fp);
+  // Round 0: a capsule request is outstanding for THIS action — ingest the
+  // relayed capsule (then fall through to a normal round-1 gate on the cache
+  // hit) or re-ask. Like the pending gate, it survives an agent's interleaved
+  // reads: only a fingerprint match drives it; expiry clears it.
+  const capReq = readJson<CapsuleRequest>(CAPSULE_REQUEST);
+  if (capReq) {
+    const expired = Date.now() - capReq.savedAt >= PENDING_TTL_MS;
+    if (!expired && capReq.fingerprint === fp) {
+      resolveCapsuleRound(capReq, fp, sessionId); // ingests (returns) or denies
+    } else if (expired) {
+      rmSync(CAPSULE_REQUEST, { force: true });
+      rmSync(CAPSULE, { force: true });
+    }
+  }
+
+  await freshGate(action, fp, sessionId);
 }
 
 /** Rounds 2 and 3: grade the relayed answer / check the understanding ack. */
@@ -332,22 +583,40 @@ function resumeGate(p: PendingGate): never {
 }
 
 /** Round 1 (or a fully silent pass-through): resolve and maybe open a gate. */
-async function freshGate(action: AgentAction, fp: string): Promise<never> {
+async function freshGate(
+  action: AgentAction,
+  fp: string,
+  sessionId: string,
+): Promise<never> {
   const config = loadConfig();
   const competence = new Competence(config.competence);
   const log = new FileInteractionLog(join(STATE_DIR, "interactions.jsonl"));
   const { cards } = loadCards();
   const policy = policyFor(config.profile, config.resolver.profiles);
-  // No capsule provider in the hook yet: cards only (Tier 0/1, zero tokens).
-  // The Tier-2 spawn protocol from hook context is still an open flag.
+  // Tier-2 is sourced by the hook's cache-or-relay provider: a cache hit gates
+  // for free; a miss with budget left throws CapsuleRelayNeeded (caught below)
+  // to run the round-0 spawn relay; over budget it downgrades to a silent
+  // observe. Still zero tokens IN the hook — the spend is the relayed subagent.
+  const provider = new HookCapsuleProvider(
+    sessionId,
+    config.resolver.maxSpawnsPerSession,
+  );
   const resolver = new TieredResolver(
     cards,
     policy,
     config.resolver.maxSpawnsPerSession,
+    provider,
   );
   const orchestrator = new Orchestrator(config, resolver, competence, { log });
 
-  const gates = await orchestrator.resolve(action);
+  let gates: ResolvedGate[];
+  try {
+    gates = await orchestrator.resolve(action);
+  } catch (err) {
+    // A novel boundary the cache doesn't cover: run the capsule-request relay.
+    if (err instanceof CapsuleRelayNeeded) requestCapsule(err); // never returns
+    throw err; // anything else: bubble to main's fail-open catch
+  }
   if (gates.length === 0) process.exit(0); // silent by default
 
   // Observe-only outcomes: record + log, never interrupt, stay silent.
