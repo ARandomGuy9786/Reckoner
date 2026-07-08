@@ -116,7 +116,11 @@ therefore runs as a state machine across hook invocations:
    interleaved unrelated actions** (second dogfood finding, 2026-07-07): agents run
    reads/checks between the relay and the re-run, and treating any non-matching
    action as abandonment re-asked the question in a loop. Only TTL expiry or a new
-   gate firing replaces a pending exchange.
+   gate firing replaces a pending exchange. **The envelope carries protocol state
+   only** (third dogfood finding, 2026-07-08): agents narrate deny reasons, so a
+   trigger risk-summary in the header reached the user as an explanation before the
+   question — inverting predict-then-reveal. Risk content lives in exactly two
+   places: the question (pre-answer) and the reveal (post-answer).
 2. **Grade on re-run** — string compare, zero LLM; record to ledger + interaction log.
    Correct → defer with the reveal as a `systemMessage`. Wrong + `coach` → defer and
    teach. Wrong + `gate` → deny with the reveal; the ack question quotes the

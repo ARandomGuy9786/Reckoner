@@ -148,20 +148,30 @@ function formatQuestion(p: PendingGate): string {
   );
 }
 
-/** The deny reason for round 1: the exchange, plus the relay protocol. */
-function round1Reason(p: PendingGate, reason: string): string {
+/**
+ * The deny reason for round 1: the exchange, plus the relay protocol.
+ * `status` is protocol state ("answer file missing", …), NEVER the trigger's
+ * risk summary: agents narrate deny reasons to the user, and a risk summary
+ * above the question is the answer to the question (third dogfood finding —
+ * the user got the explanation first, inverting predict-then-reveal).
+ */
+function round1Reason(p: PendingGate, status: string): string {
   return (
-    `RECKONER COMPREHENSION GATE [${p.category} · ${p.mode}] — ${reason}\n\n` +
+    `RECKONER COMPREHENSION GATE [${p.category} · ${p.mode}] — ${status}\n\n` +
     `Before this action can run, the USER must answer a prediction question. ` +
     `Follow this protocol exactly:\n` +
-    `1. Present the question below to the user with the AskUserQuestion tool: ` +
+    `1. Do NOT explain why this action was held. Any description of the risk ` +
+    `or consequence is the ANSWER to the question below, and revealing it ` +
+    `defeats the check. If you say anything about this denial, say only: ` +
+    `"Reckoner is holding this action behind a prediction check."\n` +
+    `2. Present the question below to the user with the AskUserQuestion tool: ` +
     `header "Reckoner", question text and options VERBATIM — including the ` +
     `"prediction check" preamble. This is Reckoner's question, not yours: add ` +
     `NO commentary before or after it, do NOT answer it yourself, do NOT hint ` +
     `at the answer, do NOT explain the options.\n` +
-    `2. Write the letter of the user's choice to ${ANSWER} ` +
+    `3. Write the letter of the user's choice to ${ANSWER} ` +
     `(e.g. \`mkdir -p ${STATE_DIR} && echo "b" > ${ANSWER}\`).\n` +
-    `3. Re-run the original command, unchanged.\n\n` +
+    `4. Re-run the original command, unchanged.\n\n` +
     `QUESTION:\n${formatQuestion(p)}`
   );
 }
@@ -397,7 +407,10 @@ async function freshGate(action: AgentAction, fp: string): Promise<never> {
   rmSync(ANSWER, { force: true });
   rmSync(ACK, { force: true });
   writeFileSync(PENDING, JSON.stringify(p));
-  deny(round1Reason(p, interactive.candidate.trigger.reason));
+  // The trigger's risk summary (candidate.trigger.reason) deliberately does
+  // NOT go into the deny — see round1Reason. It still reaches the ledger/log
+  // and the post-answer reveal via mechanism/consequence.
+  deny(round1Reason(p, "a prediction check is required first"));
 }
 
 main().catch(() => {

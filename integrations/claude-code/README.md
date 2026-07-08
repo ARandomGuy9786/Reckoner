@@ -61,6 +61,15 @@ you: "force-push this"
                            before a re-run opens the gate
 ```
 
+**The envelope carries protocol state only — never risk content.** Agents
+narrate deny reasons to the user, so a risk summary in the deny header arrives
+as an explanation *before* the question — inverting predict-then-reveal (third
+dogfood finding: the Tier-0 trigger reason for `rm -rf` was nearly verbatim the
+correct answer). Risk content exists in exactly two places: the question
+(before the answer) and the reveal (after). The deny also instructs the agent
+to say nothing about *why* the action was held beyond "Reckoner is holding
+this action behind a prediction check."
+
 **The pending gate survives interleaved actions.** Agents routinely run reads
 and checks (`ls`, `git status`, …) between relaying the question and re-running
 the gated command. Those unrelated calls pass through without touching the
